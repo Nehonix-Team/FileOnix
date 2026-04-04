@@ -86,8 +86,10 @@ func Load(args []string) (*Config, error) {
 	}
 
 	// 2. Try to load from config file (searching upwards from anchor)
+	noConfigFound := false
 	if err := loadFromFile(cfg, anchor); err != nil {
 		if strings.Contains(err.Error(), "no config file found") {
+			noConfigFound = true
 			ui.Info(fmt.Sprintf("No config file found near %s, using defaults", anchorValue(anchor)))
 		} else {
 			ui.Warn(fmt.Sprintf("Could not load config: %v", err))
@@ -99,12 +101,22 @@ func Load(args []string) (*Config, error) {
 		return nil, err
 	}
 
-	// 4. Auto-detect runtime if needed
+	// 4. Auto-generate fileonix.config.json if the user passed CLI args but had no config
+	if noConfigFound && len(args) > 0 {
+		data, err := json.MarshalIndent(cfg, "", "  ")
+		if err == nil {
+			if os.WriteFile("fileonix.config.json", data, 0644) == nil {
+				ui.Success("Auto-generated fileonix.config.json from your CLI arguments")
+			}
+		}
+	}
+
+	// 5. Auto-detect runtime if needed
 	if cfg.TypescriptRunner == "auto" {
 		cfg.TypescriptRunner = detectRuntime()
 	}
 
-	// 5. Resolve durations
+	// 6. Resolve durations
 	cfg.Debounce = time.Duration(cfg.DebounceMs) * time.Millisecond
 	cfg.Graceful = time.Duration(cfg.GracefulMs) * time.Millisecond
 
@@ -363,6 +375,9 @@ func parseArgs(cfg *Config, args []string) error {
 		case arg == "-max-restarts":
 			i++
 			fmt.Sscanf(args[i], "%d", &cfg.MaxRestarts)
+            
+		default:
+			return fmt.Errorf("unknown flag or command: %s", arg)
 		}
 
 		i++

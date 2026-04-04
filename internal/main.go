@@ -10,7 +10,7 @@ import (
 	"github.com/nehonix/fileonix/internal/watcher"
 )
 
-const VERSION = "2.0.0"
+const VERSION = "2.0.1"
 
 func main() {
 	// Parse CLI args
@@ -26,7 +26,7 @@ func main() {
 	case "--version", "-v":
 		ui.PrintBanner(VERSION)
 		os.Exit(0)
-	case "--help", "-h":
+	case "--help", "-h", "help":
 		ui.ShowHelp(VERSION)
 		os.Exit(0)
 	case "init":
