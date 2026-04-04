@@ -377,14 +377,14 @@ func (w *Watcher) buildCommand() (string, []string) {
 	script := w.cfg.Script
 
 	switch runner {
-	case "bun":
-		return "bun", append([]string{"run", script}, w.cfg.NodeArgs...)
 	case "tsx":
 		return "tsx", append([]string{script}, w.cfg.NodeArgs...)
 	case "ts-node":
 		return "ts-node", append([]string{script}, w.cfg.NodeArgs...)
-	default:
+	case "node":
 		return "node", append([]string{script}, w.cfg.NodeArgs...)
+	default:
+		return "bun", append([]string{"run", script}, w.cfg.NodeArgs...)
 	}
 }
 

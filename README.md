@@ -10,7 +10,9 @@ FileOnix v2 is the complete ground-up rewrite of QuickDev — a professional, na
 
 ## Core Philosophy
 
-FileOnix v2 bridges the gap between high-speed native monitoring and developer experience. It prioritizes the **Bun** runtime for near-instant execution while maintaining full compatibility with `tsx`, `ts-node`, and standard Node.js. Every visual detail of the CLI — from the gradient banner to the timestamped event log — is designed to feel premium.
+FileOnix v2 bridges the gap between high-speed native monitoring and developer experience. While it is engineered as the core watching engine for the **XyPriss** framework, its modular design allows it to be used as a standalone high-performance watcher for any project.
+
+It prioritizes the **Bun** runtime for near-instant execution while maintaining full compatibility with `tsx`, `ts-node`, and standard Node.js. Every visual detail of the CLI — from the gradient banner to the timestamped event log — is designed to feel premium.
 
 ## What's New in v2
 
@@ -25,16 +27,21 @@ FileOnix v2 bridges the gap between high-speed native monitoring and developer e
 
 ## Installation
 
-### Via npm (recommended)
+### Via XyPriss XFPM (Recommended)
+
+FileOnix is best managed via **XFPM** (XyPriss Package Manager).
+
+```bash
+xfpm install -g fileonix
+```
+
+> [!TIP]
+> If you don't have XFPM yet, you can get it from [GitHub](https://github.com/Nehonix-Team/XFMP) or via [npm](https://www.npmjs.com/package/xypriss-cli).
+
+### Via npm
 
 ```bash
 npm install -g fileonix
-```
-
-### Via xfpm
-
-```bash
-xfpm install fileonix
 ```
 
 ### Build from source
@@ -108,8 +115,8 @@ FileOnix injects these into your process:
 
 ```
 fileonix/
-├── main.go                    # Entry point, arg routing
-└── internal/
+├── internal/
+    ├── main.go                    # Entry point, arg routing
     ├── config/config.go       # Config loading (file + CLI args)
     ├── ui/ui.go               # Premium terminal UI
     └── watcher/watcher.go     # Core FS engine + process manager
@@ -117,4 +124,4 @@ fileonix/
 
 ## License
 
-MIT — Nehonix Team
+Nehonix OSL (NOSL) v1.0 — Nehonix Team
