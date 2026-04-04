@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * Nehonix QuickDev - Professional-grade file watcher and development server
- * 
+ * Nehonix FileOnix - Professional-grade file watcher and development server
+ *
  * This is the main entry point for the npm package.
  * It detects the platform and executes the appropriate binary.
  */
 
-const { spawn } = require('child_process');
-const path = require('path');
-const fs = require('fs');
-const os = require('os');
+const { spawn } = require("child_process");
+const path = require("path");
+const fs = require("fs");
+const os = require("os");
 
 /**
  * Get the platform-specific binary name
@@ -18,40 +18,40 @@ const os = require('os');
 function getBinaryName() {
   const platform = os.platform();
   const arch = os.arch();
-  
+
   let platformName;
   let archName;
-  let extension = '';
-  
+  let extension = "";
+
   // Map Node.js platform names to our binary names
   switch (platform) {
-    case 'win32':
-      platformName = 'windows';
-      extension = '.exe';
+    case "win32":
+      platformName = "windows";
+      extension = ".exe";
       break;
-    case 'darwin':
-      platformName = 'darwin';
+    case "darwin":
+      platformName = "darwin";
       break;
-    case 'linux':
-      platformName = 'linux';
+    case "linux":
+      platformName = "linux";
       break;
     default:
       throw new Error(`Unsupported platform: ${platform}`);
   }
-  
+
   // Map Node.js arch names to our binary names
   switch (arch) {
-    case 'x64':
-      archName = 'amd64';
+    case "x64":
+      archName = "amd64";
       break;
-    case 'arm64':
-      archName = 'arm64';
+    case "arm64":
+      archName = "arm64";
       break;
     default:
       throw new Error(`Unsupported architecture: ${arch}`);
   }
-  
-  return `quickdev-${platformName}-${archName}${extension}`;
+
+  return `fileonix-${platformName}-${archName}${extension}`;
 }
 
 /**
@@ -59,12 +59,12 @@ function getBinaryName() {
  */
 function getBinaryPath() {
   const binaryName = getBinaryName();
-  const binaryPath = path.join(__dirname, 'bin', binaryName);
-  
+  const binaryPath = path.join(__dirname, "bin", binaryName);
+
   if (!fs.existsSync(binaryPath)) {
     throw new Error(`Binary not found: ${binaryPath}`);
   }
-  
+
   return binaryPath;
 }
 
@@ -75,32 +75,31 @@ function main() {
   try {
     const binaryPath = getBinaryPath();
     const args = process.argv.slice(2);
-    
+
     // Spawn the binary process
     const child = spawn(binaryPath, args, {
-      stdio: 'inherit',
-      windowsHide: false
+      stdio: "inherit",
+      windowsHide: false,
     });
-    
+
     // Handle process exit
-    child.on('exit', (code, signal) => {
+    child.on("exit", (code, signal) => {
       if (signal) {
         process.kill(process.pid, signal);
       } else {
         process.exit(code);
       }
     });
-    
+
     // Handle errors
-    child.on('error', (err) => {
-      console.error('Failed to start quickdev:', err.message);
+    child.on("error", (err) => {
+      console.error("Failed to start fileonix:", err.message);
       process.exit(1);
     });
-    
   } catch (error) {
-    console.error('Error:', error.message);
-    console.error('\nIf this error persists, please report it at:');
-    console.error('https://github.com/nehonix/quickdev/issues');
+    console.error("Error:", error.message);
+    console.error("\nIf this error persists, please report it at:");
+    console.error("https://github.com/nehonix/fileonix/issues");
     process.exit(1);
   }
 }

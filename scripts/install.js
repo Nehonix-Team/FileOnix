@@ -7,15 +7,15 @@
  * from GitHub releases.
  */
 
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const https = require('https');
-const { execSync } = require('child_process');
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+const https = require("https");
+const { execSync } = require("child_process");
 
 // Configuration
-const GITHUB_REPO = 'nehonix/quickdev';
-const VERSION = require('../package.json').version;
+const GITHUB_REPO = "nehonix/fileonix";
+const VERSION = require("../package.json").version;
 
 /**
  * Get the platform-specific binary name and download URL
@@ -26,18 +26,18 @@ function getBinaryInfo() {
 
   let platformName;
   let archName;
-  let extension = '';
+  let extension = "";
 
   switch (platform) {
-    case 'win32':
-      platformName = 'windows';
-      extension = '.exe';
+    case "win32":
+      platformName = "windows";
+      extension = ".exe";
       break;
-    case 'darwin':
-      platformName = 'darwin';
+    case "darwin":
+      platformName = "darwin";
       break;
-    case 'linux':
-      platformName = 'linux';
+    case "linux":
+      platformName = "linux";
       break;
     default:
       console.error(`Unsupported platform: ${platform}`);
@@ -45,18 +45,18 @@ function getBinaryInfo() {
   }
 
   switch (arch) {
-    case 'x64':
-      archName = 'amd64';
+    case "x64":
+      archName = "amd64";
       break;
-    case 'arm64':
-      archName = 'arm64';
+    case "arm64":
+      archName = "arm64";
       break;
     default:
       console.error(`Unsupported architecture: ${arch}`);
       process.exit(1);
   }
 
-  const binaryName = `quickdev-${platformName}-${archName}${extension}`;
+  const binaryName = `fileonix-${platformName}-${archName}${extension}`;
   const downloadUrl = `https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/${binaryName}`;
 
   return { binaryName, downloadUrl };
@@ -71,40 +71,45 @@ function downloadFile(url, destination) {
 
     const file = fs.createWriteStream(destination);
 
-    https.get(url, (response) => {
-      // Handle redirects
-      if (response.statusCode === 302 || response.statusCode === 301) {
-        file.close();
-        fs.unlinkSync(destination);
-        return downloadFile(response.headers.location, destination)
-          .then(resolve)
-          .catch(reject);
-      }
+    https
+      .get(url, (response) => {
+        // Handle redirects
+        if (response.statusCode === 302 || response.statusCode === 301) {
+          file.close();
+          fs.unlinkSync(destination);
+          return downloadFile(response.headers.location, destination)
+            .then(resolve)
+            .catch(reject);
+        }
 
-      if (response.statusCode !== 200) {
-        file.close();
-        fs.unlinkSync(destination);
-        return reject(new Error(`Download failed: ${response.statusCode} ${response.statusMessage}`));
-      }
+        if (response.statusCode !== 200) {
+          file.close();
+          fs.unlinkSync(destination);
+          return reject(
+            new Error(
+              `Download failed: ${response.statusCode} ${response.statusMessage}`,
+            ),
+          );
+        }
 
-      response.pipe(file);
+        response.pipe(file);
 
-      file.on('finish', () => {
-        file.close();
-        resolve();
-      });
+        file.on("finish", () => {
+          file.close();
+          resolve();
+        });
 
-      file.on('error', (err) => {
+        file.on("error", (err) => {
+          file.close();
+          fs.unlinkSync(destination);
+          reject(err);
+        });
+      })
+      .on("error", (err) => {
         file.close();
         fs.unlinkSync(destination);
         reject(err);
       });
-
-    }).on('error', (err) => {
-      file.close();
-      fs.unlinkSync(destination);
-      reject(err);
-    });
   });
 }
 
@@ -112,11 +117,11 @@ function downloadFile(url, destination) {
  * Main installation logic
  */
 async function main() {
-  console.log('Setting up Nehonix QuickDev...');
+  console.log("Setting up Nehonix FileOnix...");
 
   try {
     const { binaryName, downloadUrl } = getBinaryInfo();
-    const binDir = path.join(__dirname, '..', 'bin');
+    const binDir = path.join(__dirname, "..", "bin");
     const binaryPath = path.join(binDir, binaryName);
 
     // Create bin directory if it doesn't exist
@@ -136,41 +141,45 @@ async function main() {
       } catch (error) {
         console.error(`❌ Failed to download binary: ${error.message}`);
         console.error(`URL: ${downloadUrl}`);
-        console.error('');
-        console.error('This might happen if:');
-        console.error('1. The release is not yet available on GitHub');
-        console.error('2. Your platform is not supported');
-        console.error('3. Network connectivity issues');
-        console.error('');
-        console.error('Please check: https://github.com/nehonix/quickdev/releases');
+        console.error("");
+        console.error("This might happen if:");
+        console.error("1. The release is not yet available on GitHub");
+        console.error("2. Your platform is not supported");
+        console.error("3. Network connectivity issues");
+        console.error("");
+        console.error(
+          "Please check: https://github.com/nehonix/fileonix/releases",
+        );
         process.exit(1);
       }
     }
 
     // Make the binary executable on Unix systems
-    if (os.platform() !== 'win32') {
+    if (os.platform() !== "win32") {
       try {
         fs.chmodSync(binaryPath, 0o755);
         console.log(`✓ Made binary executable`);
       } catch (error) {
-        console.warn('Warning: Could not make binary executable:', error.message);
+        console.warn(
+          "Warning: Could not make binary executable:",
+          error.message,
+        );
       }
     }
 
-    console.log('');
-    console.log(`🎉 QuickDev installed successfully!`);
+    console.log("");
+    console.log(`🎉 FileOnix installed successfully!`);
     console.log(`✓ Binary: ${binaryName}`);
-    console.log(`✓ You can now use 'quickdev' command globally`);
-    console.log('');
-    console.log('Get started:');
-    console.log('  quickdev -script your-script.js');
-    console.log('');
-    console.log('For more information:');
-    console.log('  quickdev --help');
-    console.log('  https://github.com/nehonix/quickdev');
-
+    console.log(`✓ You can now use 'fileonix' command globally`);
+    console.log("");
+    console.log("Get started:");
+    console.log("  fileonix -script your-script.js");
+    console.log("");
+    console.log("For more information:");
+    console.log("  fileonix --help");
+    console.log("  https://github.com/nehonix/fileonix");
   } catch (error) {
-    console.error('❌ Installation failed:', error.message);
+    console.error("❌ Installation failed:", error.message);
     process.exit(1);
   }
 }

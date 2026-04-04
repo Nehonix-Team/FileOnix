@@ -1,10 +1,10 @@
 {
-  "name": "nquickdev",
+  "name": "fileonix",
   "version": "1.0.1",
-  "description": "A professional-grade file watcher and development server for TypeScript/JavaScript applications. High-performance alternative to nodemon.",
+  "description": "Nehonix FileOnix (formerly QuickDev) is a professional, native file watcher and development server. High-performance alternative to nodemon.",
   "main": "index.js",
   "bin": {
-    "quickdev": "bin/quickdev.js"
+    "fileonix": "index.js"
   },
   "scripts": {
     "postinstall": "node scripts/install.js",
@@ -24,18 +24,24 @@
     "dev-server",
     "file-monitoring",
     "process-manager",
-    "nehonix"
+    "nehonix",
+    "nquickdev",
+    "QuickDev",
+    "quickdev",
+    "FileOnix",
+    "fileonix",
+    "XyPriss"
   ],
   "author": "Nehonix",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nehonix/quickdev.git"
+    "url": "https://github.com/nehonix/fileonix.git"
   },
   "bugs": {
-    "url": "https://github.com/nehonix/quickdev/issues"
+    "url": "https://github.com/nehonix/fileonix/issues"
   },
-  "homepage": "https://github.com/nehonix/quickdev#readme",
+  "homepage": "https://github.com/nehonix/fileonix#readme",
   "engines": {
     "node": ">=14.0.0"
   },
@@ -49,7 +55,7 @@
     "arm64"
   ],
   "files": [
-    "bin/quickdev.js",
+    "bin/fileonix.js",
     "scripts/install.js",
     "index.js",
     "README.md",

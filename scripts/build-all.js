@@ -41,7 +41,7 @@ function createTarArchive(outputName, outputPath, tarPath) {
         execSync(`tar -czf "${tarPath}" -C "${binDir}" "${outputName}"`);
       } catch (tarError) {
         console.warn(
-          "Warning: Could not create tar.gz archive. Please install 7zip or tar."
+          "Warning: Could not create tar.gz archive. Please install 7zip or tar.",
         );
         // Copy the binary as is
         fs.copyFileSync(outputPath, tarPath);
@@ -50,7 +50,7 @@ function createTarArchive(outputName, outputPath, tarPath) {
   } else {
     // On Unix systems, use tar directly
     execSync(
-      `chmod +x "${outputPath}" && tar -czf "${tarPath}" -C "${binDir}" "${outputName}"`
+      `chmod +x "${outputPath}" && tar -czf "${tarPath}" -C "${binDir}" "${outputName}"`,
     );
   }
 }
@@ -58,7 +58,7 @@ function createTarArchive(outputName, outputPath, tarPath) {
 // Build for each platform
 platforms.forEach((platform) => {
   const { GOOS, GOARCH, suffix } = platform;
-  const outputName = `quickdev-${GOOS}-${GOARCH}${suffix}`;
+  const outputName = `fileonix-${GOOS}-${GOARCH}${suffix}`;
   const outputPath = path.join(binDir, outputName);
 
   console.log(`Building for ${GOOS} ${GOARCH}...`);
@@ -76,7 +76,7 @@ platforms.forEach((platform) => {
     });
 
     // Create tar.gz archive
-    const tarName = `quickdev-${GOOS}-${GOARCH}.tar.gz`;
+    const tarName = `fileonix-${GOOS}-${GOARCH}.tar.gz`;
     const tarPath = path.join(binDir, tarName);
 
     // Set file permissions (Windows doesn't need chmod)

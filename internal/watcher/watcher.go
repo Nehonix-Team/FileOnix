@@ -1,378 +1,409 @@
 package watcher
 
 import (
-	"crypto/sha256"
+	"crypto/md5"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
-	"quickdev/internal/types"
-
-	"github.com/fsnotify/fsnotify"
+	"github.com/nehonix/fileonix/internal/config"
+	"github.com/nehonix/fileonix/internal/ui"
 )
 
-// FileWatcher represents the main file watcher instance
-type FileWatcher struct {
-	config         *types.FileWatcherConfig
-	watcher        *fsnotify.Watcher
-	fileHashes     map[string]string
-	hashMutex      sync.RWMutex
-	changes        chan types.FileEvent
-	errors         chan error
-	batchTimer     *time.Timer
-	batchedChanges map[string]types.FileEvent
-	batchMutex     sync.Mutex
-	health         *types.WatcherHealth
-	startTime      time.Time
+// Watcher is the core file watching and process management engine
+type Watcher struct {
+	cfg          *config.Config
+	process      *exec.Cmd
+	processMu    sync.Mutex
+	restartCount int
+	startedAt    time.Time
+	fileHashes   map[string]string
+	hashesMu     sync.RWMutex
+	events       chan FileEvent
+	done         chan struct{}
+	restart      chan string
 }
 
-// NewFileWatcher creates a new file watcher instance
-func NewFileWatcher(config *types.FileWatcherConfig) *FileWatcher {
-	return &FileWatcher{
-		config:         config,
-		fileHashes:     make(map[string]string),
-		changes:        make(chan types.FileEvent, 100),
-		errors:         make(chan error, 100),
-		batchedChanges: make(map[string]types.FileEvent),
-		health: &types.WatcherHealth{
-			Status:    "starting",
-			LastCheck: time.Now(),
-		},
-		startTime: time.Now(),
-	}
+type FileEvent struct {
+	Path      string
+	EventType string
+	Hash      string
 }
 
-// Start begins watching for file changes
-func (fw *FileWatcher) Start() error {
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return fmt.Errorf("error creating watcher: %v", err)
-	}
-	fw.watcher = watcher
-
-	// Add watch paths
-	for _, path := range fw.config.WatchPaths {
-		if err := fw.addWatchPath(path); err != nil {
-			fw.errors <- fmt.Errorf("error adding watch path %s: %v", path, err)
-		}
-	}
-
-	// Start health monitoring if enabled
-	if fw.config.HealthCheck {
-		go fw.monitorHealth()
-	}
-
-	// Start watching for events
-	go fw.watchEvents()
-
-	return nil
+// New creates a new Watcher instance
+func New(cfg *config.Config) (*Watcher, error) {
+	return &Watcher{
+		cfg:        cfg,
+		fileHashes: make(map[string]string),
+		events:     make(chan FileEvent, 64),
+		done:       make(chan struct{}),
+		restart:    make(chan string, 1),
+	}, nil
 }
 
-// Stop gracefully stops the file watcher
-func (fw *FileWatcher) Stop() error {
-	if fw.watcher != nil {
-		return fw.watcher.Close()
-	}
-	return nil
-}
+// Start begins watching and running the process
+func (w *Watcher) Start() error {
+	// Handle OS signals
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-// addWatchPath starts watching a specific path
-func (fw *FileWatcher) addWatchPath(path string) error {
-	// Convert to absolute path if not already
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("error getting absolute path for %s: %v", path, err)
-	}
-	path = absPath
-
-	// Check if path exists
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("error stating path %s: %v", path, err)
+	// Initial file hash scan
+	if w.cfg.UseFileHash {
+		w.scanHashes()
 	}
 
-	// If it's a directory, walk it and add all subdirectories
-	if info.IsDir() {
-		// fmt.Printf("Adding directory to watch: %s\n", path)
-		return filepath.Walk(path, func(subpath string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
+	// Start the process
+	w.spawnProcess()
 
-			// Skip if path should be ignored
-			if fw.shouldIgnore(subpath) {
-				if info.IsDir() {
-					// fmt.Printf("Ignoring directory: %s\n", subpath)
-					return filepath.SkipDir
-				}
-				return nil
-			}
+	// Start filesystem polling
+	go w.pollFilesystem()
 
-			// Add directory to watcher
-			if info.IsDir() {
-				if err := fw.watcher.Add(subpath); err != nil {
-					return fmt.Errorf("error watching directory %s: %v", subpath, err)
-				}
-				// fmt.Printf("Watching directory: %s\n", subpath)
-			} else if fw.hasValidExtension(subpath) {
-				// fmt.Printf("Found watchable file: %s\n", subpath)
-			}
+	// Event processing loop
+	go w.processEvents()
 
-			// Calculate initial hash for file if enabled
-			if !info.IsDir() && fw.config.EnableFileHashing {
-				if hash, err := fw.calculateFileHash(subpath); err == nil {
-					fw.hashMutex.Lock()
-					fw.fileHashes[subpath] = hash
-					fw.hashMutex.Unlock()
-				}
-			}
-
-			return nil
-		})
-	}
-
-	// If it's a file, just watch its directory
-	dir := filepath.Dir(path)
-	// fmt.Printf("Adding parent directory to watch: %s\n", dir)
-	return fw.watcher.Add(dir)
-}
-
-// watchEvents implements the actual file watching logic
-func (fw *FileWatcher) watchEvents() {
-	for {
-		select {
-		case event, ok := <-fw.watcher.Events:
-			if !ok {
-				return
-			}
-			fw.handleEvent(event)
-
-		case err, ok := <-fw.watcher.Errors:
-			if !ok {
-				return
-			}
-			fw.errors <- err
-		}
-	}
-}
-
-// handleEvent processes a file change event
-func (fw *FileWatcher) handleEvent(event fsnotify.Event) {
-	// Skip if path should be ignored
-	if fw.shouldIgnore(event.Name) {
-		return
-	}
-
-	// Skip if file extension doesn't match
-	if !fw.hasValidExtension(event.Name) {
-		return
-	}
-
-	// Handle directory events
-	info, err := os.Stat(event.Name)
-	if err == nil && info.IsDir() {
-		if event.Op&fsnotify.Create == fsnotify.Create {
-			fw.addWatchPath(event.Name)
-		}
-		return
-	}
-
-	// Check if file content actually changed
-	if fw.config.EnableFileHashing && event.Op&fsnotify.Write == fsnotify.Write {
-		if !fw.hasFileChanged(event.Name) {
-			return
-		}
-	}
-
-	// Create file event
-	fileEvent := types.FileEvent{
-		Path:      event.Name,
-		Operation: event.Op.String(),
-		Time:      time.Now(),
-	}
-
-	// Handle batching
-	if fw.config.BatchChanges {
-		fw.batchEvent(fileEvent)
-	} else {
-		fw.changes <- fileEvent
-	}
-}
-
-// batchEvent handles batched file changes
-func (fw *FileWatcher) batchEvent(event types.FileEvent) {
-	fw.batchMutex.Lock()
-	defer fw.batchMutex.Unlock()
-
-	// Add event to batch
-	fw.batchedChanges[event.Path] = event
-
-	// Reset or start timer
-	if fw.batchTimer != nil {
-		fw.batchTimer.Reset(time.Duration(fw.config.BatchTimeout) * time.Millisecond)
-	} else {
-		fw.batchTimer = time.AfterFunc(time.Duration(fw.config.BatchTimeout)*time.Millisecond, func() {
-			fw.flushBatchedChanges()
-		})
-	}
-}
-
-// flushBatchedChanges handles a batch of changes
-func (fw *FileWatcher) flushBatchedChanges() {
-	fw.batchMutex.Lock()
-	defer fw.batchMutex.Unlock()
-
-	// Send all batched changes
-	for _, event := range fw.batchedChanges {
-		fw.changes <- event
-	}
-
-	// Clear batch
-	fw.batchedChanges = make(map[string]types.FileEvent)
-	fw.batchTimer = nil
-}
-
-// hasFileChanged checks if a file has changed by comparing hashes
-func (fw *FileWatcher) hasFileChanged(path string) bool {
-	newHash, err := fw.calculateFileHash(path)
-	if err != nil {
-		return true // If we can't calculate hash, assume file changed
-	}
-
-	fw.hashMutex.RLock()
-	oldHash := fw.fileHashes[path]
-	fw.hashMutex.RUnlock()
-
-	if newHash != oldHash {
-		fw.hashMutex.Lock()
-		fw.fileHashes[path] = newHash
-		fw.hashMutex.Unlock()
-		return true
-	}
-
-	return false
-}
-
-// calculateFileHash calculates the hash of a file
-func (fw *FileWatcher) calculateFileHash(path string) (string, error) {
-	data, err := ioutil.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-
-	hash := sha256.Sum256(data)
-	return fmt.Sprintf("%x", hash), nil
-}
-
-// shouldIgnore checks if a path should be ignored
-func (fw *FileWatcher) shouldIgnore(path string) bool {
-	// Convert path to forward slashes for consistency
-	path = filepath.ToSlash(path)
-	path = strings.TrimPrefix(path, "./")
-
-	// Check against ignore patterns
-	for _, pattern := range fw.config.IgnorePaths {
-		// Convert pattern to forward slashes and trim ./ prefix
-		pattern = filepath.ToSlash(pattern)
-		pattern = strings.TrimPrefix(pattern, "./")
-
-		// Try exact match first
-		if path == pattern {
-			return true
-		}
-
-		// Try glob match
-		if matched, _ := filepath.Match(pattern, path); matched {
-			return true
-		}
-
-		// Try contains match (for node_modules etc)
-		if strings.Contains(path, "/"+pattern+"/") || strings.HasSuffix(path, "/"+pattern) {
-			return true
-		}
-	}
-
-	// Check dot files
-	if !fw.config.WatchDotFiles && strings.Contains(filepath.Base(path), ".") {
-		// Allow specific extensions even if they start with dot
-		if fw.hasValidExtension(path) {
-			return false
-		}
-		return true
-	}
-
-	return false
-}
-
-// hasValidExtension checks if a file has a valid extension
-func (fw *FileWatcher) hasValidExtension(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	if ext == "" {
-		return false
-	}
-
-	for _, validExt := range fw.config.Extensions {
-		if strings.ToLower(validExt) == ext {
-			return true
-		}
-	}
-
-	return false
-}
-
-// monitorHealth periodically checks the watcher's health
-func (fw *FileWatcher) monitorHealth() {
-	ticker := time.NewTicker(time.Duration(fw.config.HealthCheckInterval) * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		fw.updateHealth()
-	}
-}
-
-// updateHealth performs a health check
-func (fw *FileWatcher) updateHealth() {
-	fw.health.LastCheck = time.Now()
-	fw.health.Status = "healthy"
-
-	// Count watched directories
-	watchedDirs := 0
-	if fw.watcher != nil {
-		watchedDirs = len(fw.watcher.WatchList())
-	}
-	fw.health.WatchedDirs = watchedDirs
-
-	// Count files being watched
-	fileCount := len(fw.fileHashes)
-	fw.health.FileCount = fileCount
-
-	// Get memory stats
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	fw.health.MemoryUsage = m.Alloc
-
-	// Update error count
+	// Wait for signal or done
 	select {
-	case err := <-fw.errors:
-		fw.health.ErrorCount++
-		fw.health.LastError = err.Error()
-		fw.health.LastErrorTime = time.Now()
-		fw.health.Status = "degraded"
+	case sig := <-sigCh:
+		ui.Log(ui.EventInfo, fmt.Sprintf("Received %s — shutting down gracefully", sig))
+		w.shutdown()
+	case <-w.done:
+	}
+
+	return nil
+}
+
+// ─── PROCESS MANAGEMENT ──────────────────────────────────────────────────────
+
+func (w *Watcher) spawnProcess() {
+	w.processMu.Lock()
+	defer w.processMu.Unlock()
+
+	if w.cfg.ClearScreen {
+		clearScreen()
+	}
+
+	runner, runnerArgs := w.buildCommand()
+	ui.PrintProcessStart(runner, w.cfg.Script)
+
+	cmd := exec.Command(runner, runnerArgs...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = w.buildEnv()
+
+	w.startedAt = time.Now()
+
+	if err := cmd.Start(); err != nil {
+		ui.Log(ui.EventError, "Failed to start process", err.Error())
+		return
+	}
+
+	w.process = cmd
+
+	// Monitor process in background
+	go func() {
+		err := cmd.Wait()
+		duration := time.Since(w.startedAt)
+
+		w.processMu.Lock()
+		// Only report if this is still the current process
+		if w.process == cmd {
+			exitCode := 0
+			if err != nil {
+				if exitErr, ok := err.(*exec.ExitError); ok {
+					exitCode = exitErr.ExitCode()
+				}
+			}
+			ui.PrintProcessStop(exitCode, duration)
+			w.process = nil
+		}
+		w.processMu.Unlock()
+	}()
+}
+
+func (w *Watcher) killProcess() {
+	w.processMu.Lock()
+	defer w.processMu.Unlock()
+
+	if w.process == nil || w.process.Process == nil {
+		return
+	}
+
+	// Try graceful SIGTERM first
+	w.process.Process.Signal(syscall.SIGTERM)
+
+	done := make(chan struct{})
+	go func() {
+		w.process.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Graceful exit
+	case <-time.After(w.cfg.Graceful):
+		// Force kill
+		w.process.Process.Kill()
+	}
+	w.process = nil
+}
+
+func (w *Watcher) triggerRestart(reason string) {
+	// Debounce: non-blocking send
+	select {
+	case w.restart <- reason:
 	default:
 	}
 }
 
-// GetChangeChannel returns the channel for file change events
-func (fw *FileWatcher) GetChangeChannel() <-chan types.FileEvent {
-	return fw.changes
+func (w *Watcher) processEvents() {
+	var batchTimer *time.Timer
+	var pendingReasons []string
+
+	flush := func() {
+		if len(pendingReasons) == 0 {
+			return
+		}
+		reason := pendingReasons[len(pendingReasons)-1]
+		if len(pendingReasons) > 1 {
+			reason = fmt.Sprintf("%d files changed", len(pendingReasons))
+		}
+		pendingReasons = nil
+
+		w.restartCount++
+		ui.PrintRestartDivider(w.restartCount)
+		w.killProcess()
+		w.spawnProcess()
+		_ = reason
+	}
+
+	for {
+		select {
+		case reason := <-w.restart:
+			if w.cfg.BatchMode {
+				pendingReasons = append(pendingReasons, reason)
+				if batchTimer != nil {
+					batchTimer.Reset(w.cfg.Debounce * 3)
+				} else {
+					batchTimer = time.AfterFunc(w.cfg.Debounce*3, flush)
+				}
+			} else {
+				w.restartCount++
+				ui.PrintRestartDivider(w.restartCount)
+				w.killProcess()
+				w.spawnProcess()
+			}
+		case <-w.done:
+			return
+		}
+	}
 }
 
-// GetErrorChannel returns the channel for errors
-func (fw *FileWatcher) GetErrorChannel() <-chan error {
-	return fw.errors
+func (w *Watcher) shutdown() {
+	ui.Log(ui.EventInfo, "Killing process...")
+	w.killProcess()
+	fmt.Println()
+	ui.Log(ui.EventSuccess, "FileOnix shutdown complete")
+	fmt.Println()
+	close(w.done)
+}
+
+// ─── FILESYSTEM POLLING ───────────────────────────────────────────────────────
+
+func (w *Watcher) pollFilesystem() {
+	ticker := time.NewTicker(w.cfg.Debounce)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			w.checkForChanges()
+		case <-w.done:
+			return
+		}
+	}
+}
+
+func (w *Watcher) checkForChanges() {
+	for _, watchDir := range w.cfg.Watch {
+		if err := filepath.WalkDir(watchDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return nil // skip errors
+			}
+
+			// Skip ignored dirs
+			if d.IsDir() && w.shouldIgnore(path) {
+				return filepath.SkipDir
+			}
+			if d.IsDir() {
+				return nil
+			}
+
+			// Check extension
+			if !w.hasWatchedExt(path) {
+				return nil
+			}
+
+			// Check modification time
+			info, err := d.Info()
+			if err != nil {
+				return nil
+			}
+
+			// Hash-based detection (more precise)
+			if w.cfg.UseFileHash {
+				w.checkFileHash(path, info)
+			} else {
+				w.checkFileMtime(path, info)
+			}
+
+			return nil
+		}); err != nil {
+			// Walk error - ignore silently
+		}
+	}
+}
+
+func (w *Watcher) checkFileHash(path string, info os.FileInfo) {
+	if info.Size() > 10*1024*1024 { // Skip files >10MB
+		return
+	}
+
+	hash, err := hashFile(path)
+	if err != nil {
+		return
+	}
+
+	w.hashesMu.Lock()
+	oldHash, exists := w.fileHashes[path]
+	w.fileHashes[path] = hash
+	w.hashesMu.Unlock()
+
+	if !exists {
+		// New file
+		ui.PrintFileChange(path, "created")
+		w.triggerRestart(path)
+	} else if oldHash != hash {
+		// Modified
+		ui.PrintFileChange(path, "modified")
+		w.triggerRestart(path)
+	}
+}
+
+var mtimes = make(map[string]time.Time)
+var mtimesMu sync.Mutex
+
+func (w *Watcher) checkFileMtime(path string, info os.FileInfo) {
+	mtimesMu.Lock()
+	old, exists := mtimes[path]
+	mtimes[path] = info.ModTime()
+	mtimesMu.Unlock()
+
+	if !exists {
+		return // First seen
+	}
+	if info.ModTime().After(old) {
+		ui.PrintFileChange(path, "modified")
+		w.triggerRestart(path)
+	}
+}
+
+func (w *Watcher) scanHashes() {
+	spinner := ui.NewSpinner("Scanning files...")
+	spinner.Start()
+
+	count := 0
+	for _, watchDir := range w.cfg.Watch {
+		filepath.WalkDir(watchDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				if d != nil && d.IsDir() && w.shouldIgnore(path) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !w.hasWatchedExt(path) {
+				return nil
+			}
+			hash, err := hashFile(path)
+			if err == nil {
+				w.hashesMu.Lock()
+				w.fileHashes[path] = hash
+				w.hashesMu.Unlock()
+				count++
+			}
+			return nil
+		})
+	}
+
+	spinner.Stop()
+	ui.Log(ui.EventInfo, fmt.Sprintf("Indexed %d files", count))
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+func (w *Watcher) shouldIgnore(path string) bool {
+	base := filepath.Base(path)
+	for _, ignore := range w.cfg.Ignore {
+		if base == ignore || strings.Contains(path, "/"+ignore+"/") || strings.HasSuffix(path, "/"+ignore) {
+			return true
+		}
+	}
+	return false
+}
+
+func (w *Watcher) hasWatchedExt(path string) bool {
+	ext := filepath.Ext(path)
+	for _, e := range w.cfg.Extensions {
+		if strings.EqualFold(ext, e) {
+			return true
+		}
+	}
+	return false
+}
+
+func (w *Watcher) buildCommand() (string, []string) {
+	runner := w.cfg.TypescriptRunner
+	script := w.cfg.Script
+
+	switch runner {
+	case "bun":
+		return "bun", append([]string{"run", script}, w.cfg.NodeArgs...)
+	case "tsx":
+		return "tsx", append([]string{script}, w.cfg.NodeArgs...)
+	case "ts-node":
+		return "ts-node", append([]string{script}, w.cfg.NodeArgs...)
+	default:
+		return "node", append([]string{script}, w.cfg.NodeArgs...)
+	}
+}
+
+func (w *Watcher) buildEnv() []string {
+	env := os.Environ()
+	env = append(env, "FILEONIX=1")
+	env = append(env, fmt.Sprintf("FILEONIX_RESTART=%d", w.restartCount))
+	return env
+}
+
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := md5.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+
+func clearScreen() {
+	fmt.Print("\033[H\033[2J")
 }
