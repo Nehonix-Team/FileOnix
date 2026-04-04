@@ -45,10 +45,27 @@ func main() {
 		ui.Fatal("Configuration error", err.Error())
 	}
 
-	// Validate
-	if cfg.Script == "" {
-		ui.Fatal("No script specified", "Use -script <file> or define 'script' in fileonix.config.json")
+	// Validate - No script is now optional (watch-only mode)
+	if cfg.Script != "" {
+		if _, err := os.Stat(cfg.Script); os.IsNotExist(err) {
+			ui.Warn(fmt.Sprintf("Script file not found: %s", cfg.Script))
+		}
 	}
+
+	// Validate watch directories
+	existingWatch := make([]string, 0)
+	for _, dir := range cfg.Watch {
+		if _, err := os.Stat(dir); err == nil {
+			existingWatch = append(existingWatch, dir)
+		} else {
+			ui.Warn(fmt.Sprintf("Watch directory not found: %s", dir))
+		}
+	}
+
+	if len(existingWatch) == 0 {
+		ui.Fatal("No valid watch directories", "None of the specified watch paths exist or are accessible")
+	}
+	cfg.Watch = existingWatch
 
 	// Display loaded config
 	ui.PrintConfig(cfg)

@@ -42,6 +42,9 @@ const (
 	BgNavy      = "\033[48;2;8;15;30m"
 	BgDark      = "\033[48;2;5;10;20m"
 	BgBlue      = "\033[48;2;0;50;120m"
+	BgRed       = "\033[48;2;180;20;20m"
+	BgOrange    = "\033[48;2;180;80;0m"
+	BgYellow    = "\033[48;2;160;130;0m"
 
 	// Styles
 	Bold        = "\033[1m"
@@ -282,8 +285,8 @@ func Log(event EventType, message string, detail ...string) {
 		icon = CyanGlow + Bold + SymSpark
 		color = CyanGlow
 	case EventError:
-		icon = Red + Bold + SymCross
-		color = Red
+		icon = BgRed + White + Bold + " " + SymCross + " " + Reset
+		color = Red + Bold
 	case EventSuccess:
 		icon = Green + Bold + SymTick
 		color = Green
@@ -328,9 +331,9 @@ func PrintProcessStop(exitCode int, duration time.Duration) {
 			Dim+SteelGray, "code 0", Reset,
 		)
 	} else {
-		fmt.Printf("  %s%s%s  %sProcess crashed%s  %s%s%s  %scode %d%s\n",
-			Red+Bold, SymCross, Reset,
-			Red, Reset,
+		fmt.Printf("  %s %s CRASH %s  %s%s%s  %s%s%s  %sCode %d%s\n",
+			BgRed+White+Bold, SymCross, Reset,
+			Red+Bold, "Process failed", Reset,
 			Dim+SteelGray, durStr, Reset,
 			Orange, exitCode, Reset,
 		)
@@ -357,7 +360,7 @@ func PrintFileChange(path string, changeType string) {
 		color = Silver
 	}
 
-	fmt.Printf("  %s%s%s  %s%s%s  %s%s%s\n",
+	fmt.Printf("  %s%s%s  %s%s%s\n",
 		icon, Reset,
 		Dim+SteelGray+time.Now().Format("15:04:05")+Reset,
 		color+changeType+Reset,
@@ -382,7 +385,7 @@ func PrintRestartDivider(count int) {
 
 func Fatal(title, message string) {
 	fmt.Println()
-	fmt.Printf("  %s%s FATAL ERROR %s%s\n", Red+Bold, SymCross, SymCross, Reset)
+	fmt.Printf("  %s %s FATAL ERROR %s\n", BgRed+White+Bold, SymCross, Reset)
 	fmt.Printf("  %s%s%s\n", Red+Bold, title, Reset)
 	fmt.Printf("  %s%s%s\n", WhiteDim, message, Reset)
 	fmt.Println()
@@ -390,8 +393,8 @@ func Fatal(title, message string) {
 }
 
 func Warn(message string) {
-	fmt.Printf("  %s%s%s  %s%s%s\n",
-		Yellow+Bold, SymWarn, Reset,
+	fmt.Printf("  %s %s WARN %s  %s%s%s\n",
+		BgYellow+White+Bold, SymWarn, Reset,
 		Yellow, message, Reset,
 	)
 }
@@ -419,7 +422,7 @@ func ShowHelp(version string) {
 	fmt.Printf("    %sfileonix%s %s[options]%s\n\n", BlueElec+Bold, Reset, Silver, Reset)
 
 	printHelpSection("OPTIONS")
-	printHelpRow("-script <file>",   "Entry point to watch and execute", true)
+	printHelpRow("-script <file>",   "Entry point to watch and execute (optional)", true)
 	printHelpRow("-watch <dirs>",    "Comma-separated directories to watch", false)
 	printHelpRow("-ext <exts>",      "Extensions to watch (default: .ts,.js)", false)
 	printHelpRow("-runner <name>",   "Runtime: bun | tsx | ts-node | node", false)
@@ -438,6 +441,7 @@ func ShowHelp(version string) {
 	fmt.Println()
 	printHelpSection("EXAMPLES")
 	fmt.Printf("    %sfileonix%s %s-script src/index.ts%s\n", BlueElec+Bold, Reset, Chrome, Reset)
+	fmt.Printf("    %sfileonix%s %s-watch src,internal -ignore dist%s\n", BlueElec+Bold, Reset, Chrome, Reset)
 	fmt.Printf("    %sfileonix%s %s-script server.ts -watch src,config -runner bun%s\n", BlueElec+Bold, Reset, Chrome, Reset)
 	fmt.Printf("    %sfileonix%s %s-script app.ts -delay 200 -clear -batch%s\n\n", BlueElec+Bold, Reset, Chrome, Reset)
 

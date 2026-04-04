@@ -82,6 +82,11 @@ func (w *Watcher) Start() error {
 // ─── PROCESS MANAGEMENT ──────────────────────────────────────────────────────
 
 func (w *Watcher) spawnProcess() {
+	if w.cfg.Script == "" {
+		ui.Log(ui.EventInfo, "Watch-only mode active", "Monitoring for changes")
+		return
+	}
+
 	w.processMu.Lock()
 	defer w.processMu.Unlock()
 

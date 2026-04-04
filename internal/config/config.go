@@ -97,7 +97,7 @@ func (c *Config) Display() {
 
 func displayConfig(cfg *Config) {
 	fields := []ui.ConfigField{
-		{Key: "script",   Value: cfg.Script,                    Highlight: true},
+		{Key: "script",   Value: scriptValue(cfg.Script),       Highlight: cfg.Script != "", Dim: cfg.Script == ""},
 		{Key: "runner",   Value: cfg.TypescriptRunner,          Highlight: true},
 		{Key: "watch",    Value: strings.Join(cfg.Watch, ", "), Highlight: false},
 		{Key: "ignore",   Value: strings.Join(cfg.Ignore, ", "), Dim: true},
@@ -115,6 +115,13 @@ func boolLabel(b bool, t, f string) string {
 		return t
 	}
 	return f
+}
+
+func scriptValue(s string) string {
+	if s == "" {
+		return "watch only"
+	}
+	return s
 }
 
 // ─── FILE LOADING ────────────────────────────────────────────────────────────
