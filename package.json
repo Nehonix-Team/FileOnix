@@ -1,6 +1,6 @@
 {
   "name": "fileonix",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Nehonix FileOnix (formerly QuickDev) is a professional, native file watcher and development server. High-performance alternative to nodemon.",
   "main": "index.js",
   "bin": {
@@ -33,15 +33,15 @@
     "XyPriss"
   ],
   "author": "Nehonix",
-  "license": "MIT",
+  "license": "Nehonix OSL (NOSL) v1.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nehonix/fileonix.git"
+    "url": "https://github.com/Nehonix-Team/FileOnix.git"
   },
   "bugs": {
-    "url": "https://github.com/nehonix/fileonix/issues"
+    "url": "https://github.com/Nehonix-Team/FileOnix/issues"
   },
-  "homepage": "https://github.com/nehonix/fileonix#readme",
+  "homepage": "https://github.com/Nehonix-Team/FileOnix#readme",
   "engines": {
     "node": ">=14.0.0"
   },

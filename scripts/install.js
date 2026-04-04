@@ -14,7 +14,7 @@ const https = require("https");
 const { execSync } = require("child_process");
 
 // Configuration
-const GITHUB_REPO = "nehonix/fileonix";
+const GITHUB_REPO = "Nehonix-Team/FileOnix";
 const VERSION = require("../package.json").version;
 
 /**
@@ -148,7 +148,7 @@ async function main() {
         console.error("3. Network connectivity issues");
         console.error("");
         console.error(
-          "Please check: https://github.com/nehonix/fileonix/releases",
+          "Please check: https://github.com/Nehonix-Team/FileOnix/releases",
         );
         process.exit(1);
       }
@@ -177,7 +177,7 @@ async function main() {
     console.log("");
     console.log("For more information:");
     console.log("  fileonix --help");
-    console.log("  https://github.com/nehonix/fileonix");
+    console.log("  https://github.com/Nehonix-Team/FileOnix");
   } catch (error) {
     console.error("❌ Installation failed:", error.message);
     process.exit(1);

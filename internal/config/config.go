@@ -87,8 +87,11 @@ func Load(args []string) (*Config, error) {
 
 	// 2. Try to load from config file (searching upwards from anchor)
 	if err := loadFromFile(cfg, anchor); err != nil {
-		// Not fatal — config file is optional
-		ui.Info(fmt.Sprintf("No config file found near %s, using defaults", anchorValue(anchor)))
+		if strings.Contains(err.Error(), "no config file found") {
+			ui.Info(fmt.Sprintf("No config file found near %s, using defaults", anchorValue(anchor)))
+		} else {
+			ui.Warn(fmt.Sprintf("Could not load config: %v", err))
+		}
 	}
 
 	// 3. Override with CLI args (higher priority)
@@ -112,9 +115,6 @@ func Load(args []string) (*Config, error) {
 			cfg.Watch = []string{dir}
 		}
 	}
-
-	// 7. Display loaded config
-	displayConfig(cfg)
 
 	return cfg, nil
 }
@@ -216,6 +216,20 @@ func loadFromFile(cfg *Config, startPath string) error {
 				}
 			}
 
+			// Check for script path resolution (same logic)
+			if fileCfg.Script != "" && !filepath.IsAbs(fileCfg.Script) {
+				fileCfg.Script = filepath.Join(searchDir, fileCfg.Script)
+			}
+
+			// Convert relative watch paths in config to be absolute (relative to config file)
+			if len(fileCfg.Watch) > 0 {
+				for i, w := range fileCfg.Watch {
+					if !filepath.IsAbs(w) {
+						fileCfg.Watch[i] = filepath.Join(searchDir, w)
+					}
+				}
+			}
+
 			// Merge: file values overwrite defaults only if set
 			mergeConfig(cfg, fileCfg)
 			ui.Success(fmt.Sprintf("Loaded config from %s", path))
@@ -270,14 +284,6 @@ func mergeConfig(dst, src *Config) {
 	if len(src.NodeArgs) > 0 {
 		dst.NodeArgs = src.NodeArgs
 	}
-	// UseFileHash: if provided in file, it should win
-	// We need to check if it was actually in the JSON.
-	// For now, let's assume if it's true in src, it should be true.
-	// But if src is a Config that was just unmarshaled and it's false,
-	// it might just be the default Go bool value.
-	// To be truly precise, we'd need pointer bools or a map.
-	// However, the user request says "fonctionnent comme prévu".
-	// Let's stick with simple merge for now, but ensure CLI overrides.
 	dst.UseFileHash = src.UseFileHash
 }
 

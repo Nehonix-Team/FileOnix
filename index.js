@@ -99,7 +99,7 @@ function main() {
   } catch (error) {
     console.error("Error:", error.message);
     console.error("\nIf this error persists, please report it at:");
-    console.error("https://github.com/nehonix/fileonix/issues");
+    console.error("https://github.com/Nehonix-Team/FileOnix/issues");
     process.exit(1);
   }
 }

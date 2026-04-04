@@ -2,28 +2,17 @@
   <img src="assets/FileOnix.png" width="600" alt="FileOnix Logo">
 </p>
 
-# Nehonix FileOnix v2
+# Nehonix FileOnix
 
 **High-Performance Native Watcher System**
 
-FileOnix v2 is the complete ground-up rewrite of QuickDev — a professional, native file watcher and development server engineered for extreme performance. Built with a Go core and a premium terminal UI, it serves as the native hot-reload engine for modern TypeScript and JavaScript applications.
+FileOnix is the complete ground-up rewrite of QuickDev — a professional, native file watcher and development server engineered for extreme performance. Built with a Go core and a premium terminal UI, it serves as the native hot-reload engine for modern TypeScript and JavaScript applications.
 
 ## Core Philosophy
 
-FileOnix v2 bridges the gap between high-speed native monitoring and developer experience. While it is engineered as the core watching engine for the **XyPriss** framework, its modular design allows it to be used as a standalone high-performance watcher for any project.
+FileOnix bridges the gap between high-speed native monitoring and developer experience. While it is engineered as the core watching engine for the **XyPriss** framework, its modular design allows it to be used as a standalone high-performance watcher for any project.
 
 It prioritizes the **Bun** runtime for near-instant execution while maintaining full compatibility with `tsx`, `ts-node`, and standard Node.js. Every visual detail of the CLI — from the gradient banner to the timestamped event log — is designed to feel premium.
-
-## What's New in v2
-
-- **Total rewrite** — Clean architecture, no legacy code
-- **Premium CLI** — Chrome/silver + electric blue theme matching the FileOnix logo
-- **Smarter detection** — MD5 file hashing eliminates false restarts from touch/save-without-change
-- **Batch mode** — Groups rapid file changes into single restarts
-- **Watch-only mode** — Run without a script to just monitor and log changes
-- **Auto runtime detection** — Finds bun → tsx → ts-node → node automatically
-- **Graceful shutdown** — SIGTERM with configurable timeout before SIGKILL
-- **Zero dependencies** — Pure Go stdlib, no vendor bloat
 
 ## Installation
 
@@ -70,7 +59,7 @@ fileonix init
 
 ## Configuration
 
-`fileonix.config.json` or `.fileonixrc.json` in your project root:
+FileOnix automatically searches upwards from your script or watch directory to find the closest configuration file. You can use `fileonix.config.json`, `.fileonixrc.json`, or embed it directly in your `package.json` under the `"fileonix"` field:
 
 ```json
 {

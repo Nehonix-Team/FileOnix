@@ -60,3 +60,6 @@ go.work
 .env.development.local
 .env.test.local
 .env.production.local
+release_note.md
+.private/*
+bin/*
