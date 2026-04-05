@@ -1,6 +1,6 @@
 {
   "name": "fileonix",
-  "version": "1.0.5",
+  "version": "2.0.3",
   "description": "Nehonix FileOnix (formerly QuickDev) is a professional, native file watcher and development server. High-performance alternative to nodemon.",
   "main": "index.js",
   "bin": {

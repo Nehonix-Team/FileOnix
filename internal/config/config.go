@@ -219,7 +219,10 @@ func loadFromFile(cfg *Config, startPath string) error {
 					continue // Ignore invalid package.json
 				}
 				if pkg.FileOnix == nil {
-					continue // No fileonix config in this package.json
+					// Found a package.json but no fileonix config.
+					// This is a project boundary, so we stop searching upwards
+					// to avoid using a parent project's config.
+					return nil 
 				}
 				fileCfg = pkg.FileOnix
 			} else {

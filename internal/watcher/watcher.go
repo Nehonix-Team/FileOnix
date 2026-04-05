@@ -410,5 +410,8 @@ func hashFile(path string) (string, error) {
 }
 
 func clearScreen() {
-	fmt.Print("\033[H\033[2J")
+	// \033[H: Move cursor to top-left
+	// \033[2J: Clear visible screen
+	// \033[3J: Clear scrollback buffer (Hard Clear)
+	fmt.Print("\033[H\033[2J\033[3J")
 }

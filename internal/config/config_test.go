@@ -97,3 +97,49 @@ func TestHierarchicalLoad(t *testing.T) {
 		}
 	})
 }
+
+func TestProjectBoundaryStop(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "fileonix-boundary-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Structure:
+	// root/fileonix.config.json (BatchMode: true)
+	// root/sub/package.json (empty)
+	// root/sub/src/app.ts
+
+	root := tempDir
+	sub := filepath.Join(root, "sub")
+	src := filepath.Join(sub, "src")
+	os.MkdirAll(src, 0755)
+
+	// 1. Root config
+	rootCfg := map[string]interface{}{
+		"batchMode": true,
+	}
+	rootJSON, _ := json.Marshal(rootCfg)
+	os.WriteFile(filepath.Join(root, "fileonix.config.json"), rootJSON, 0644)
+
+	// 2. Sub package.json (boundary)
+	os.WriteFile(filepath.Join(sub, "package.json"), []byte("{}"), 0644)
+
+	// Change CWD
+	oldCWD, _ := os.Getwd()
+	os.Chdir(src)
+	defer os.Chdir(oldCWD)
+
+	t.Run("Should stop at package.json boundary", func(t *testing.T) {
+		args := []string{"--script", "app.ts"}
+		cfg, err := Load(args)
+		if err != nil {
+			t.Fatalf("Load failed: %v", err)
+		}
+
+		// Should NOT have BatchMode: true from root
+		if cfg.BatchMode == true {
+			t.Errorf("Expected BatchMode=false (default), but it matched root config which should have been stopped by package.json boundary")
+		}
+	})
+}
