@@ -5,12 +5,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/nehonix/fileonix/internal/config"
-	"github.com/nehonix/fileonix/internal/ui"
-	"github.com/nehonix/fileonix/internal/watcher"
+	"github.com/Nehonix-Team/FileOnix/internal/config"
+	"github.com/Nehonix-Team/FileOnix/internal/ui"
+	"github.com/Nehonix-Team/FileOnix/internal/watcher"
 )
 
-const VERSION = "2.0.4"
+const VERSION = "2.0.5"
 
 func main() {
 	// Parse CLI args
@@ -77,7 +77,7 @@ func main() {
 	}
 
 	fmt.Println()
-	ui.PrintSection("ENGINE READY", fmt.Sprintf("Watching %d path(s) | Runtime: %s", len(cfg.Watch), cfg.TypescriptRunner))
+	ui.PrintSection("FileOnix", fmt.Sprintf("Watching %d path(s) | Runtime: %s", len(cfg.Watch), cfg.TypescriptRunner))
 	fmt.Println()
 
 	// Block on watcher

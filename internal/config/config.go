@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nehonix/fileonix/internal/ui"
+	"github.com/Nehonix-Team/FileOnix/internal/ui"
 )
 
 // Config holds all FileOnix runtime configuration

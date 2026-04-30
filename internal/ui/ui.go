@@ -120,7 +120,7 @@ func PrintBanner(version string) {
 	fmt.Println(tagLeft + tagRight)
 
 	// Sub-tagline
-	fmt.Println(Dim + SteelGray + "  " + SymDiamond + " Engineered by " + Reset + BlueElec + "Nehonix Team" + Reset + Dim + SteelGray + " — Go-powered, Bun-first, zero overhead" + Reset)
+	fmt.Println(Dim + SteelGray + "  " + SymDiamond + " Engineered by " + Reset + BlueElec + "Nehonix Team" + Reset + Dim + SteelGray + "  —  https://github.com/Nehonix-Team" + Reset)
 
 	fmt.Println()
 	printGlowLine(width)

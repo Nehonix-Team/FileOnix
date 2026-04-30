@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nehonix/fileonix/internal/config"
-	"github.com/nehonix/fileonix/internal/ui"
+	"github.com/Nehonix-Team/FileOnix/internal/config"
+	"github.com/Nehonix-Team/FileOnix/internal/ui"
 )
 
 // Watcher is the core file watching and process management engine
