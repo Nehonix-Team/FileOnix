@@ -222,7 +222,7 @@ func loadFromFile(cfg *Config, startPath string) error {
 					// Found a package.json but no fileonix config.
 					// This is a project boundary, so we stop searching upwards
 					// to avoid using a parent project's config.
-					return nil 
+					return fmt.Errorf("no config file found (project boundary at %s)", path)
 				}
 				fileCfg = pkg.FileOnix
 			} else {
