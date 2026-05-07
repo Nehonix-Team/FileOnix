@@ -77,7 +77,7 @@ func main() {
 	}
 
 	fmt.Println()
-	ui.PrintSection("FileOnix", fmt.Sprintf("Watching %d path(s) | Runtime: %s", len(cfg.Watch), cfg.TypescriptRunner))
+	ui.PrintSection("FileOnix", fmt.Sprintf("Watching %d path(s) | Runner: %s", len(cfg.Watch), cfg.Runner))
 	fmt.Println()
 
 	// Block on watcher

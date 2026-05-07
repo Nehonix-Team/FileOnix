@@ -373,7 +373,7 @@ func (w *Watcher) hasWatchedExt(path string) bool {
 }
 
 func (w *Watcher) buildCommand() (string, []string) {
-	runner := w.cfg.TypescriptRunner
+	runner := w.cfg.Runner
 	script := w.cfg.Script
 
 	switch runner {
@@ -383,8 +383,11 @@ func (w *Watcher) buildCommand() (string, []string) {
 		return "ts-node", append([]string{script}, w.cfg.NodeArgs...)
 	case "node":
 		return "node", append([]string{script}, w.cfg.NodeArgs...)
-	default:
+	case "bun":
 		return "bun", append([]string{"run", script}, w.cfg.NodeArgs...)
+	default:
+		// For any other runner (bash, python, etc), just execute: runner script [args]
+		return runner, append([]string{script}, w.cfg.NodeArgs...)
 	}
 }
 

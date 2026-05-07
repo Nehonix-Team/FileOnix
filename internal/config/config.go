@@ -20,7 +20,8 @@ type Config struct {
 	Extensions       []string `json:"extensions"`
 
 	// Runtime
-	TypescriptRunner string   `json:"typescriptRunner"`
+	Runner           string   `json:"runner"`
+	TypescriptRunner string   `json:"typescriptRunner,omitempty"` // Deprecated
 	NodeArgs         []string `json:"nodeArgs"`
 	EnvFile          string   `json:"envFile"`
 
@@ -42,7 +43,7 @@ func DefaultConfig() *Config {
 		Watch:            []string{"."},
 		Ignore:           []string{"node_modules", "dist", ".git", ".next", "build", "coverage"},
 		Extensions:       []string{".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"},
-		TypescriptRunner: "bun",
+		Runner:           "bun",
 		ClearScreen:      false,
 		BatchMode:        false,
 		DebounceMs:       100,
@@ -55,6 +56,18 @@ func DefaultConfig() *Config {
 // Load reads config from CLI args and config files
 func Load(args []string) (*Config, error) {
 	cfg := DefaultConfig()
+
+	// Check for migration flag
+	shouldMigrate := false
+	filteredArgs := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg == "--migrate" {
+			shouldMigrate = true
+		} else {
+			filteredArgs = append(filteredArgs, arg)
+		}
+	}
+	args = filteredArgs
 
 	// 1. Determine anchor path for config resolution
 	// We do a quick scan of args to find script or watch path
@@ -87,12 +100,35 @@ func Load(args []string) (*Config, error) {
 
 	// 2. Try to load from config file (searching upwards from anchor)
 	noConfigFound := false
-	if err := loadFromFile(cfg, anchor); err != nil {
+	configPath := ""
+	if path, err := loadFromFile(cfg, anchor); err != nil {
 		if strings.Contains(err.Error(), "no config file found") {
 			noConfigFound = true
 			ui.Info(fmt.Sprintf("No config file found near %s, using defaults", anchorValue(anchor)))
 		} else {
 			ui.Warn(fmt.Sprintf("Could not load config: %v", err))
+		}
+	} else {
+		configPath = path
+	}
+
+	// Handle deprecation of typescriptRunner
+	if cfg.TypescriptRunner != "" {
+		if shouldMigrate && configPath != "" && !strings.HasSuffix(configPath, "package.json") {
+			// Perform migration
+			cfg.Runner = cfg.TypescriptRunner
+			cfg.TypescriptRunner = ""
+			if err := saveConfig(cfg, configPath); err == nil {
+				ui.Success(fmt.Sprintf("Migrated configuration in %s (typescriptRunner -> runner)", configPath))
+			} else {
+				ui.Warn(fmt.Sprintf("Failed to migrate config: %v", err))
+			}
+		} else {
+			ui.Warn("Property 'typescriptRunner' is deprecated. Please use 'runner' instead.")
+			ui.Info("Run with '--migrate' to automatically update your configuration file.")
+			if cfg.Runner == "bun" || cfg.Runner == "" { // Only fallback if runner wasn't explicitly set
+				cfg.Runner = cfg.TypescriptRunner
+			}
 		}
 	}
 
@@ -112,8 +148,8 @@ func Load(args []string) (*Config, error) {
 	}
 
 	// 5. Auto-detect runtime if needed
-	if cfg.TypescriptRunner == "auto" {
-		cfg.TypescriptRunner = detectRuntime()
+	if cfg.Runner == "auto" {
+		cfg.Runner = detectRuntime()
 	}
 
 	// 6. Resolve durations
@@ -139,7 +175,7 @@ func (c *Config) Display() {
 func displayConfig(cfg *Config) {
 	fields := []ui.ConfigField{
 		{Key: "script", Value: scriptValue(cfg.Script), Highlight: cfg.Script != "", Dim: cfg.Script == ""},
-		{Key: "runner", Value: cfg.TypescriptRunner, Highlight: true},
+		{Key: "runner", Value: cfg.Runner, Highlight: true},
 		{Key: "watch", Value: strings.Join(cfg.Watch, ", "), Highlight: false},
 		{Key: "ignore", Value: strings.Join(cfg.Ignore, ", "), Dim: true},
 		{Key: "ext", Value: strings.Join(cfg.Extensions, " "), Dim: false},
@@ -174,7 +210,7 @@ func anchorValue(a string) string {
 
 // ─── FILE LOADING ────────────────────────────────────────────────────────────
 
-func loadFromFile(cfg *Config, startPath string) error {
+func loadFromFile(cfg *Config, startPath string) (string, error) {
 	candidates := []string{
 		"fileonix.config.json",
 		".fileonixrc.json",
@@ -222,12 +258,12 @@ func loadFromFile(cfg *Config, startPath string) error {
 					// Found a package.json but no fileonix config.
 					// This is a project boundary, so we stop searching upwards
 					// to avoid using a parent project's config.
-					return fmt.Errorf("no config file found (project boundary at %s)", path)
+					return "", fmt.Errorf("no config file found (project boundary at %s)", path)
 				}
 				fileCfg = pkg.FileOnix
 			} else {
 				if err := json.Unmarshal(data, fileCfg); err != nil {
-					return fmt.Errorf("invalid config file %s: %w", path, err)
+					return "", fmt.Errorf("invalid config file %s: %w", path, err)
 				}
 			}
 
@@ -248,7 +284,7 @@ func loadFromFile(cfg *Config, startPath string) error {
 			// Merge: file values overwrite defaults only if set
 			mergeConfig(cfg, fileCfg)
 			ui.Success(fmt.Sprintf("Loaded config from %s", path))
-			return nil
+			return path, nil
 		}
 
 		// Go up
@@ -259,7 +295,15 @@ func loadFromFile(cfg *Config, startPath string) error {
 		searchDir = parent
 	}
 
-	return fmt.Errorf("no config file found")
+	return "", fmt.Errorf("no config file found")
+}
+
+func saveConfig(cfg *Config, path string) error {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
 }
 
 func mergeConfig(dst, src *Config) {
@@ -274,6 +318,9 @@ func mergeConfig(dst, src *Config) {
 	}
 	if len(src.Extensions) > 0 {
 		dst.Extensions = src.Extensions
+	}
+	if src.Runner != "" {
+		dst.Runner = src.Runner
 	}
 	if src.TypescriptRunner != "" {
 		dst.TypescriptRunner = src.TypescriptRunner
@@ -335,7 +382,15 @@ func parseArgs(cfg *Config, args []string) error {
 			if i >= len(args) {
 				return fmt.Errorf("-runner requires a value")
 			}
-			cfg.TypescriptRunner = args[i]
+			cfg.Runner = args[i]
+
+		case arg == "-typescriptRunner" || arg == "--typescriptRunner":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("-typescriptRunner requires a value")
+			}
+			cfg.Runner = args[i]
+			ui.Warn("-typescriptRunner is deprecated, use -runner instead")
 
 		case arg == "-ignore" || arg == "--ignore":
 			i++
@@ -445,7 +500,7 @@ func InitConfig() {
 		"script":           "src/index.ts",
 		"watch":            []string{"src"},
 		"ignore":           []string{"node_modules", "dist", ".git"},
-		"typescriptRunner": "bun",
+		"runner":           "bun",
 		"clearScreen":      true,
 		"debounceMs":       100,
 		"batchMode":        false,

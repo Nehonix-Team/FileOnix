@@ -425,12 +425,13 @@ func ShowHelp(version string) {
 	printHelpRow("-script <file>",   "Entry point to watch and execute (optional)", true)
 	printHelpRow("-watch <dirs>",    "Comma-separated directories to watch", false)
 	printHelpRow("-ext <exts>",      "Extensions to watch (default: .ts,.js)", false)
-	printHelpRow("-runner <name>",   "Runtime: bun | tsx | ts-node | node", false)
+	printHelpRow("-runner <name>",   "Runtime: bun | tsx | ts-node | node | bash | etc.", false)
 	printHelpRow("-ignore <dirs>",   "Comma-separated directories to ignore", false)
 	printHelpRow("-delay <ms>",      "Debounce delay in milliseconds (default: 100)", false)
 	printHelpRow("-batch",           "Enable batch mode (group rapid changes)", false)
 	printHelpRow("-clear",           "Clear screen on each restart", false)
 	printHelpRow("--no-hash",        "Disable file hash change detection", false)
+	printHelpRow("--migrate",        "Migrate deprecated 'typescriptRunner' to 'runner'", false)
 	printHelpRow("--version, -v",    "Show version information", false)
 	printHelpRow("--help, -h",       "Show this help message", false)
 
@@ -452,7 +453,7 @@ func ShowHelp(version string) {
       "script":           "src/index.ts",
       "watch":            ["src", "internal"],
       "ignore":           ["node_modules", "dist"],
-      "typescriptRunner": "bun",
+      "runner":           "bun",
       "clearScreen":      true,
       "debounceMs":       100,
       "batchMode":        false
