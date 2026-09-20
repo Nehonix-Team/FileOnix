@@ -255,11 +255,19 @@ func loadFromFile(cfg *Config, startPath string) (string, error) {
 			if name == "package.json" {
 				// Special handling for package.json
 				var pkg struct {
-					FileOnix *Config `json:"fileonix"`
+					Name            string            `json:"name"`
+					FileOnix        *Config           `json:"fileonix"`
+					Dependencies    map[string]string `json:"dependencies"`
+					DevDependencies map[string]string `json:"devDependencies"`
 				}
 				if err := json.Unmarshal(data, &pkg); err != nil {
 					continue // Ignore invalid package.json
 				}
+
+				if isXyPrissProject(pkg.Name, pkg.Dependencies, pkg.DevDependencies, searchDir) {
+					cfg.Runner = "xfpm"
+				}
+
 				if pkg.FileOnix == nil {
 					// Found a package.json but no fileonix config.
 					// This is a project boundary, so we stop searching upwards
@@ -389,6 +397,9 @@ func parseArgs(cfg *Config, args []string) error {
 				return fmt.Errorf("-runner requires a value")
 			}
 			cfg.Runner = args[i]
+
+		case arg == "-shield" || arg == "--shield" || arg == "-xypriss" || arg == "--xypriss":
+			cfg.Runner = "xfpm"
 
 		case arg == "-typescriptRunner" || arg == "--typescriptRunner":
 			i++
@@ -522,3 +533,27 @@ func InitConfig() {
 	ui.Success("Created " + configFile)
 	ui.Info("Edit it to match your project, then run: fileonix")
 }
+
+func isXyPrissProject(name string, deps, devDeps map[string]string, dir string) bool {
+	if name == "xypriss" {
+		return true
+	}
+	if deps != nil {
+		if _, ok := deps["xypriss"]; ok {
+			return true
+		}
+	}
+	if devDeps != nil {
+		if _, ok := devDeps["xypriss"]; ok {
+			return true
+		}
+	}
+	markers := []string{"xypriss.json", "xypriss.config.ts", "xypriss.config.js"}
+	for _, m := range markers {
+		if _, err := os.Stat(filepath.Join(dir, m)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+

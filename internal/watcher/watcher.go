@@ -465,8 +465,14 @@ func (w *Watcher) buildCommand() (string, []string) {
 		return "node", append([]string{script}, w.cfg.NodeArgs...)
 	case "bun":
 		return "bun", append([]string{"run", script}, w.cfg.NodeArgs...)
+	case "xfpm":
+		return "xfpm", append([]string{"run", script}, w.cfg.NodeArgs...)
 	default:
-		// For any other runner (bash, python, etc), just execute: runner script [args]
+		// For any other runner (bash, python, or compound like "xfpm run"), split if needed
+		parts := strings.Fields(runner)
+		if len(parts) > 1 {
+			return parts[0], append(append(parts[1:], script), w.cfg.NodeArgs...)
+		}
 		return runner, append([]string{script}, w.cfg.NodeArgs...)
 	}
 }
