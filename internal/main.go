@@ -12,7 +12,7 @@ import (
 
 const VERSION = "2.0.6"
 
-func main() {
+func main() { 
 	// Parse CLI args
 	args := os.Args[1:]
 

@@ -28,6 +28,7 @@ type Watcher struct {
 	hashesMu     sync.RWMutex
 	events       chan FileEvent
 	done         chan struct{}
+	stopOnce     sync.Once
 	restart      chan string
 }
 
@@ -50,9 +51,11 @@ func New(cfg *config.Config) (*Watcher, error) {
 
 // Start begins watching and running the process
 func (w *Watcher) Start() error {
-	// Handle OS signals
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	var sigCh chan os.Signal
+	if !w.cfg.NoSignals {
+		sigCh = make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	}
 
 	// Initial file hash scan
 	if w.cfg.UseFileHash {
@@ -68,22 +71,36 @@ func (w *Watcher) Start() error {
 	// Event processing loop
 	go w.processEvents()
 
-	// Wait for signal or done
-	select {
-	case sig := <-sigCh:
-		ui.Log(ui.EventInfo, fmt.Sprintf("Received %s — shutting down gracefully", sig))
-		w.shutdown()
-	case <-w.done:
+	if sigCh != nil {
+		select {
+		case sig := <-sigCh:
+			if !w.cfg.Silent {
+				ui.Log(ui.EventInfo, fmt.Sprintf("Received %s — shutting down gracefully", sig))
+			}
+			w.shutdown()
+		case <-w.done:
+		}
+	} else {
+		<-w.done
 	}
 
 	return nil
+}
+
+// Stop cleanly terminates the watcher engine.
+func (w *Watcher) Stop() {
+	w.stopOnce.Do(func() {
+		w.shutdown()
+	})
 }
 
 // ─── PROCESS MANAGEMENT ──────────────────────────────────────────────────────
 
 func (w *Watcher) spawnProcess() {
 	if w.cfg.Script == "" {
-		ui.Log(ui.EventInfo, "Watch-only mode active", "Monitoring for changes")
+		if !w.cfg.Silent {
+			ui.Log(ui.EventInfo, "Watch-only mode active", "Monitoring for changes")
+		}
 		return
 	}
 
@@ -181,10 +198,14 @@ func (w *Watcher) processEvents() {
 		}
 		pendingReasons = nil
 
-		w.restartCount++
-		ui.PrintRestartDivider(w.restartCount)
-		w.killProcess()
-		w.spawnProcess()
+		if w.cfg.Script != "" {
+			w.restartCount++
+			if !w.cfg.Silent {
+				ui.PrintRestartDivider(w.restartCount)
+			}
+			w.killProcess()
+			w.spawnProcess()
+		}
 		_ = reason
 	}
 
@@ -199,10 +220,15 @@ func (w *Watcher) processEvents() {
 					batchTimer = time.AfterFunc(w.cfg.Debounce*3, flush)
 				}
 			} else {
-				w.restartCount++
-				ui.PrintRestartDivider(w.restartCount)
-				w.killProcess()
-				w.spawnProcess()
+				if w.cfg.Script != "" {
+					w.restartCount++
+					if !w.cfg.Silent {
+						ui.PrintRestartDivider(w.restartCount)
+					}
+					w.killProcess()
+					w.spawnProcess()
+				}
+				_ = reason
 			}
 		case <-w.done:
 			return
@@ -211,12 +237,20 @@ func (w *Watcher) processEvents() {
 }
 
 func (w *Watcher) shutdown() {
-	ui.Log(ui.EventInfo, "Killing process...")
+	if !w.cfg.Silent {
+		ui.Log(ui.EventInfo, "Killing process...")
+	}
 	w.killProcess()
-	fmt.Println()
-	ui.Log(ui.EventSuccess, "FileOnix shutdown complete")
-	fmt.Println()
-	close(w.done)
+	if !w.cfg.Silent {
+		fmt.Println()
+		ui.Log(ui.EventSuccess, "FileOnix shutdown complete")
+		fmt.Println()
+	}
+	select {
+	case <-w.done:
+	default:
+		close(w.done)
+	}
 }
 
 // ─── FILESYSTEM POLLING ───────────────────────────────────────────────────────
@@ -236,6 +270,20 @@ func (w *Watcher) pollFilesystem() {
 }
 
 func (w *Watcher) checkForChanges() {
+	// If a single target file is configured, monitor only that file
+	if w.cfg.TargetFile != "" {
+		info, err := os.Stat(w.cfg.TargetFile)
+		if err != nil {
+			return
+		}
+		if w.cfg.UseFileHash {
+			w.checkFileHash(w.cfg.TargetFile, info)
+		} else {
+			w.checkFileMtime(w.cfg.TargetFile, info)
+		}
+		return
+	}
+
 	for _, watchDir := range w.cfg.Watch {
 		if err := filepath.WalkDir(watchDir, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
@@ -292,11 +340,21 @@ func (w *Watcher) checkFileHash(path string, info os.FileInfo) {
 
 	if !exists {
 		// New file
-		ui.PrintFileChange(path, "created")
+		if !w.cfg.Silent {
+			ui.PrintFileChange(path, "created")
+		}
+		if w.cfg.OnChange != nil {
+			w.cfg.OnChange(path, "created")
+		}
 		w.triggerRestart(path)
 	} else if oldHash != hash {
 		// Modified
-		ui.PrintFileChange(path, "modified")
+		if !w.cfg.Silent {
+			ui.PrintFileChange(path, "modified")
+		}
+		if w.cfg.OnChange != nil {
+			w.cfg.OnChange(path, "modified")
+		}
 		w.triggerRestart(path)
 	}
 }
@@ -314,14 +372,32 @@ func (w *Watcher) checkFileMtime(path string, info os.FileInfo) {
 		return // First seen
 	}
 	if info.ModTime().After(old) {
-		ui.PrintFileChange(path, "modified")
+		if !w.cfg.Silent {
+			ui.PrintFileChange(path, "modified")
+		}
+		if w.cfg.OnChange != nil {
+			w.cfg.OnChange(path, "modified")
+		}
 		w.triggerRestart(path)
 	}
 }
 
 func (w *Watcher) scanHashes() {
-	spinner := ui.NewSpinner("Scanning files...")
-	spinner.Start()
+	if w.cfg.TargetFile != "" {
+		hash, err := hashFile(w.cfg.TargetFile)
+		if err == nil {
+			w.hashesMu.Lock()
+			w.fileHashes[w.cfg.TargetFile] = hash
+			w.hashesMu.Unlock()
+		}
+		return
+	}
+
+	var spinner *ui.Spinner
+	if !w.cfg.Silent {
+		spinner = ui.NewSpinner("Scanning files...")
+		spinner.Start()
+	}
 
 	count := 0
 	for _, watchDir := range w.cfg.Watch {
@@ -346,8 +422,12 @@ func (w *Watcher) scanHashes() {
 		})
 	}
 
-	spinner.Stop()
-	ui.Log(ui.EventInfo, fmt.Sprintf("Indexed %d files", count))
+	if spinner != nil {
+		spinner.Stop()
+	}
+	if !w.cfg.Silent {
+		ui.Log(ui.EventInfo, fmt.Sprintf("Indexed %d files", count))
+	}
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────

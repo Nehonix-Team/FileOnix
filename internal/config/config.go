@@ -33,6 +33,12 @@ type Config struct {
 	UseFileHash  bool          `json:"useFileHash"`
 	GracefulMs   int           `json:"gracefulMs"`
 
+	// Library / programmatic options
+	Silent      bool                         `json:"silent"`
+	NoSignals   bool                         `json:"noSignals"`
+	TargetFile  string                       `json:"targetFile"`
+	OnChange    func(path, eventType string) `json:"-"`
+
 	// Internal
 	Debounce time.Duration `json:"-"`
 	Graceful time.Duration `json:"-"`
