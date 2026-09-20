@@ -456,6 +456,15 @@ func (w *Watcher) buildCommand() (string, []string) {
 	runner := w.cfg.Runner
 	script := w.cfg.Script
 
+	// If runner targets xfpm (e.g. "xfpm", "./bin/xfpm", "/path/to/xfpm"), run with "run" subcommand
+	if runner == "xfpm" || filepath.Base(runner) == "xfpm" {
+		bin := runner
+		if bin == "xfpm" {
+			bin = resolveXfpmBin()
+		}
+		return bin, append([]string{"run", script}, w.cfg.NodeArgs...)
+	}
+
 	switch runner {
 	case "tsx":
 		return "tsx", append([]string{script}, w.cfg.NodeArgs...)
@@ -465,8 +474,6 @@ func (w *Watcher) buildCommand() (string, []string) {
 		return "node", append([]string{script}, w.cfg.NodeArgs...)
 	case "bun":
 		return "bun", append([]string{"run", script}, w.cfg.NodeArgs...)
-	case "xfpm":
-		return "xfpm", append([]string{"run", script}, w.cfg.NodeArgs...)
 	default:
 		// For any other runner (bash, python, or compound like "xfpm run"), split if needed
 		parts := strings.Fields(runner)
@@ -475,6 +482,26 @@ func (w *Watcher) buildCommand() (string, []string) {
 		}
 		return runner, append([]string{script}, w.cfg.NodeArgs...)
 	}
+}
+
+func resolveXfpmBin() string {
+	// Check for local project binary in current working directory or ancestors
+	cwd, err := os.Getwd()
+	if err == nil {
+		dir := cwd
+		for {
+			candidate := filepath.Join(dir, "bin", "xfpm")
+			if fi, err := os.Stat(candidate); err == nil && !fi.IsDir() {
+				return candidate
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+	return "xfpm"
 }
 
 func (w *Watcher) buildEnv() []string {
