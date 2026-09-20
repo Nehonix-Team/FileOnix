@@ -21,6 +21,7 @@ type Config struct {
 
 	// Runtime
 	Runner           string   `json:"runner"`
+	Libs             []string `json:"libs,omitempty"`
 	TypescriptRunner string   `json:"typescriptRunner,omitempty"` // Deprecated
 	NodeArgs         []string `json:"nodeArgs"`
 	EnvFile          string   `json:"envFile"`
@@ -189,6 +190,9 @@ func displayConfig(cfg *Config) {
 		{Key: "hash", Value: boolLabel(cfg.UseFileHash, "enabled", "disabled"), Dim: !cfg.UseFileHash},
 		{Key: "batch", Value: boolLabel(cfg.BatchMode, "enabled", "disabled"), Dim: !cfg.BatchMode},
 		{Key: "clear", Value: boolLabel(cfg.ClearScreen, "yes", "no"), Dim: !cfg.ClearScreen},
+	}
+	if len(cfg.Libs) > 0 {
+		fields = append(fields, ui.ConfigField{Key: "libs", Value: strings.Join(cfg.Libs, ", "), Highlight: true})
 	}
 	ui.PrintConfigFields(fields)
 }
@@ -398,7 +402,26 @@ func parseArgs(cfg *Config, args []string) error {
 			}
 			cfg.Runner = args[i]
 
+		case arg == "-l" || arg == "--lib" || arg == "-lib":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--lib requires a library name (e.g. xess)")
+			}
+			libName := strings.ToLower(args[i])
+			cfg.Libs = append(cfg.Libs, libName)
+			if libName == "xess" || libName == "libxess" {
+				cfg.Runner = "xfpm"
+			}
+
+		case strings.HasPrefix(arg, "--lib="):
+			libName := strings.ToLower(strings.TrimPrefix(arg, "--lib="))
+			cfg.Libs = append(cfg.Libs, libName)
+			if libName == "xess" || libName == "libxess" {
+				cfg.Runner = "xfpm"
+			}
+
 		case arg == "-shield" || arg == "--shield" || arg == "-xypriss" || arg == "--xypriss":
+			cfg.Libs = append(cfg.Libs, "xess")
 			cfg.Runner = "xfpm"
 
 		case arg == "-typescriptRunner" || arg == "--typescriptRunner":
