@@ -4,15 +4,30 @@ const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { version } = require("../package.json");
 
-// Ensure bin directory exists
-const binDir = path.join(__dirname, "..", "bin");
-if (!fs.existsSync(binDir)) {
-  fs.mkdirSync(binDir);
+const rootDir = path.join(__dirname, "..");
+const buildShPath = path.join(rootDir, "build.sh");
+
+// On Unix systems, delegate to hardened build.sh
+if (os.platform() !== "win32" && fs.existsSync(buildShPath)) {
+  try {
+    const args = process.argv.slice(2).join(" ");
+    execSync(`bash "${buildShPath}" ${args}`, {
+      cwd: rootDir,
+      stdio: "inherit",
+    });
+    process.exit(0);
+  } catch (err) {
+    process.exit(err.status || 1);
+  }
 }
 
-// Platform configurations
+// Fallback for environments without bash
+const binDir = path.join(rootDir, "bin");
+if (!fs.existsSync(binDir)) {
+  fs.mkdirSync(binDir, { recursive: true });
+}
+
 const platforms = [
   { GOOS: "windows", GOARCH: "amd64", suffix: ".exe" },
   { GOOS: "windows", GOARCH: "arm64", suffix: ".exe" },
@@ -22,40 +37,58 @@ const platforms = [
   { GOOS: "darwin", GOARCH: "arm64", suffix: "" },
 ];
 
-// Determine if we're running on Windows
 const isWindows = os.platform() === "win32";
 
-// Function to create tar archive
+function stripBuildinfo(targetPath) {
+  try {
+    const script = `
+import sys, re
+target = sys.argv[1]
+try:
+    with open(target, 'r+b') as f:
+        data = bytearray(f.read())
+        changed = False
+        for m in re.finditer(b'\\\\xff Go buildinf:', data):
+            data[m.start():m.start()+32] = b'\\x00' * 32
+            changed = True
+        for m in re.finditer(b'path\\\\t', data):
+            end = data.find(b'\\x00', m.start())
+            if end != -1:
+                data[m.start():end] = b'\\x00' * (end - m.start())
+                changed = True
+        if changed:
+            f.seek(0)
+            f.write(data)
+            f.truncate()
+except Exception:
+    pass
+`;
+    execSync(`python3 -c "${script.replace(/\n/g, " ")}" "${targetPath}"`, {
+      stdio: "ignore",
+    });
+  } catch (_) {}
+}
+
 function createTarArchive(outputName, outputPath, tarPath) {
   if (isWindows) {
-    // On Windows, we'll use 7zip if available, otherwise fall back to tar
     try {
-      // Try using 7zip
       execSync(`7z a -ttar "${tarPath}.tmp" "${outputName}"`, { cwd: binDir });
       execSync(`7z a -tgzip "${tarPath}" "${tarPath}.tmp"`, { cwd: binDir });
-      // Clean up temporary file
       fs.unlinkSync(path.join(binDir, `${tarPath}.tmp`));
     } catch (error) {
-      // Fallback to tar if available
       try {
         execSync(`tar -czf "${tarPath}" -C "${binDir}" "${outputName}"`);
       } catch (tarError) {
-        console.warn(
-          "Warning: Could not create tar.gz archive. Please install 7zip or tar.",
-        );
-        // Copy the binary as is
         fs.copyFileSync(outputPath, tarPath);
       }
     }
   } else {
-    // On Unix systems, use tar directly
     execSync(
-      `chmod +x "${outputPath}" && tar -czf "${tarPath}" -C "${binDir}" "${outputName}"`,
+      `chmod +x "${outputPath}" && tar -czf "${tarPath}" -C "${binDir}" "${outputName}"`
     );
   }
 }
 
-// Build for each platform
 platforms.forEach((platform) => {
   const { GOOS, GOARCH, suffix } = platform;
   const outputName = `fileonix-${GOOS}-${GOARCH}${suffix}`;
@@ -64,29 +97,30 @@ platforms.forEach((platform) => {
   console.log(`Building for ${GOOS} ${GOARCH}...`);
 
   try {
-    // Build the binary
-    execSync(`go build -o "${outputPath}" ./internal`, {
-      env: {
-        ...process.env,
-        GOOS,
-        GOARCH,
-        CGO_ENABLED: "0",
-      },
-      stdio: "inherit",
-    });
+    execSync(
+      `go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" -o "${outputPath}" ./internal`,
+      {
+        cwd: rootDir,
+        env: {
+          ...process.env,
+          GOOS,
+          GOARCH,
+          CGO_ENABLED: "0",
+        },
+        stdio: "inherit",
+      }
+    );
 
-    // Create tar.gz archive
+    stripBuildinfo(outputPath);
+
     const tarName = `fileonix-${GOOS}-${GOARCH}.tar.gz`;
     const tarPath = path.join(binDir, tarName);
 
-    // Set file permissions (Windows doesn't need chmod)
     if (!isWindows) {
       fs.chmodSync(outputPath, 0o755);
     }
 
-    // Create archive
     createTarArchive(outputName, outputPath, tarPath);
-
     console.log(`✓ Built ${outputName}`);
   } catch (error) {
     console.error(`✗ Failed to build for ${GOOS} ${GOARCH}:`, error.message);
