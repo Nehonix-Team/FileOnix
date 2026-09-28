@@ -10,7 +10,7 @@ import (
 	"github.com/Nehonix-Team/FileOnix/internal/watcher"
 )
 
-var VERSION = "2.0.7"
+var VERSION = "2.0.8"
 
 func main() { 
 	// Parse CLI args

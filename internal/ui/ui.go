@@ -112,7 +112,7 @@ func PrintBanner(version string) {
 	// Swoosh line (like the logo's blue underline)
 	printSwoosh(width)
 
-	fmt.Println()
+	fmt.Println() 
 
 	// Tagline row
 	tagLeft  := BlueDeep + Bold + "  High-Performance Native Watcher System" + Reset
