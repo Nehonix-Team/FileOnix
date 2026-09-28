@@ -41,8 +41,10 @@ type Config struct {
 	OnChange    func(path, eventType string) `json:"-"`
 
 	// Internal
-	Debounce time.Duration `json:"-"`
-	Graceful time.Duration `json:"-"`
+	ConfigFile   string        `json:"-"`
+	OriginalArgs []string      `json:"-"`
+	Debounce     time.Duration `json:"-"`
+	Graceful     time.Duration `json:"-"`
 }
 
 func DefaultConfig() *Config {
@@ -75,6 +77,7 @@ func Load(args []string) (*Config, error) {
 		}
 	}
 	args = filteredArgs
+	cfg.OriginalArgs = args
 
 	// 1. Determine anchor path for config resolution
 	// We do a quick scan of args to find script or watch path
@@ -117,6 +120,7 @@ func Load(args []string) (*Config, error) {
 		}
 	} else {
 		configPath = path
+		cfg.ConfigFile = path
 	}
 
 	// Handle deprecation of typescriptRunner
@@ -364,7 +368,56 @@ func mergeConfig(dst, src *Config) {
 	if len(src.NodeArgs) > 0 {
 		dst.NodeArgs = src.NodeArgs
 	}
+	if len(src.Libs) > 0 {
+		dst.Libs = src.Libs
+	}
 	dst.UseFileHash = src.UseFileHash
+}
+
+// Reload re-reads the active configuration file and updates configuration settings in memory.
+func (c *Config) Reload() error {
+	if c.ConfigFile == "" {
+		return fmt.Errorf("no config file to reload")
+	}
+
+	fresh := DefaultConfig()
+	if _, err := loadFromFile(fresh, c.ConfigFile); err != nil {
+		return err
+	}
+
+	// Re-apply original CLI args on top of reloaded config file (CLI args have precedence)
+	if len(c.OriginalArgs) > 0 {
+		if err := parseArgs(fresh, c.OriginalArgs); err != nil {
+			return err
+		}
+	}
+
+	if fresh.Runner == "auto" {
+		fresh.Runner = detectRuntime()
+	}
+
+	fresh.Debounce = time.Duration(fresh.DebounceMs) * time.Millisecond
+	fresh.Graceful = time.Duration(fresh.GracefulMs) * time.Millisecond
+
+	// Update fields on c
+	c.Script = fresh.Script
+	c.Watch = fresh.Watch
+	c.Ignore = fresh.Ignore
+	c.Extensions = fresh.Extensions
+	c.Runner = fresh.Runner
+	c.Libs = fresh.Libs
+	c.NodeArgs = fresh.NodeArgs
+	c.EnvFile = fresh.EnvFile
+	c.ClearScreen = fresh.ClearScreen
+	c.BatchMode = fresh.BatchMode
+	c.DebounceMs = fresh.DebounceMs
+	c.MaxRestarts = fresh.MaxRestarts
+	c.UseFileHash = fresh.UseFileHash
+	c.GracefulMs = fresh.GracefulMs
+	c.Debounce = fresh.Debounce
+	c.Graceful = fresh.Graceful
+
+	return nil
 }
 
 // ─── ARG PARSING ─────────────────────────────────────────────────────────────

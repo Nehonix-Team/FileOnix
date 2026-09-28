@@ -270,6 +270,13 @@ func (w *Watcher) pollFilesystem() {
 }
 
 func (w *Watcher) checkForChanges() {
+	// If an active configuration file is set, monitor it for dynamic reloads
+	if w.cfg.ConfigFile != "" {
+		if info, err := os.Stat(w.cfg.ConfigFile); err == nil {
+			w.checkConfigFile(w.cfg.ConfigFile, info)
+		}
+	}
+
 	// If a single target file is configured, monitor only that file
 	if w.cfg.TargetFile != "" {
 		info, err := os.Stat(w.cfg.TargetFile)
@@ -382,7 +389,50 @@ func (w *Watcher) checkFileMtime(path string, info os.FileInfo) {
 	}
 }
 
+func (w *Watcher) checkConfigFile(path string, info os.FileInfo) {
+	hash, err := hashFile(path)
+	if err != nil {
+		return
+	}
+
+	w.hashesMu.Lock()
+	oldHash, exists := w.fileHashes[path]
+	w.fileHashes[path] = hash
+	w.hashesMu.Unlock()
+
+	if exists && oldHash != hash {
+		if !w.cfg.Silent {
+			ui.Log(ui.EventSuccess, fmt.Sprintf("Config file changed: %s", filepath.Base(path)))
+		}
+		if err := w.cfg.Reload(); err != nil {
+			if !w.cfg.Silent {
+				ui.Warn(fmt.Sprintf("Failed to reload config: %v", err))
+			}
+		} else {
+			if !w.cfg.Silent {
+				ui.Log(ui.EventInfo, "Configuration reloaded successfully")
+				w.cfg.Display()
+			}
+			if w.cfg.UseFileHash {
+				go w.scanHashes()
+			}
+		}
+		if w.cfg.OnChange != nil {
+			w.cfg.OnChange(path, "config_modified")
+		}
+		w.triggerRestart("config:" + path)
+	}
+}
+
 func (w *Watcher) scanHashes() {
+	if w.cfg.ConfigFile != "" {
+		if hash, err := hashFile(w.cfg.ConfigFile); err == nil {
+			w.hashesMu.Lock()
+			w.fileHashes[w.cfg.ConfigFile] = hash
+			w.hashesMu.Unlock()
+		}
+	}
+
 	if w.cfg.TargetFile != "" {
 		hash, err := hashFile(w.cfg.TargetFile)
 		if err == nil {
@@ -505,7 +555,21 @@ func resolveXfpmBin() string {
 }
 
 func (w *Watcher) buildEnv() []string {
-	env := os.Environ()
+	raw := os.Environ()
+	env := make([]string, 0, len(raw)+2)
+	for _, e := range raw {
+		// Strip outer libXESS supervisor markers so each spawned runner
+		// gets its own fresh, isolated, un-locked libXESS session across reloads
+		if strings.HasPrefix(e, "LIBXESS_ACTIVE=") ||
+			strings.HasPrefix(e, "XYPRISS_XESS_AUTH_TOKEN=") ||
+			strings.HasPrefix(e, "XFPM_IPC_SOCK=") ||
+			strings.HasPrefix(e, "XYPRISS_XESS_SOCK=") ||
+			strings.HasPrefix(e, "XYPRISS_USER_TMP=") ||
+			strings.HasPrefix(e, "XYPRISS_SESSION_HASH=") {
+			continue
+		}
+		env = append(env, e)
+	}
 	env = append(env, "FILEONIX=1")
 	env = append(env, fmt.Sprintf("FILEONIX_RESTART=%d", w.restartCount))
 	return env
