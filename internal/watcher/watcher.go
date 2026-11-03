@@ -21,6 +21,7 @@ import (
 type Watcher struct {
 	cfg          *config.Config
 	process      *exec.Cmd
+	procDone     chan struct{}
 	processMu    sync.Mutex
 	restartCount int
 	startedAt    time.Time
@@ -126,10 +127,13 @@ func (w *Watcher) spawnProcess() {
 		return
 	}
 
+	doneCh := make(chan struct{})
 	w.process = cmd
+	w.procDone = doneCh
 
 	// Monitor process in background
 	go func() {
+		defer close(doneCh)
 		err := cmd.Wait()
 		duration := time.Since(w.startedAt)
 
@@ -144,36 +148,55 @@ func (w *Watcher) spawnProcess() {
 			}
 			ui.PrintProcessStop(exitCode, duration)
 			w.process = nil
+			w.procDone = nil
 		}
 		w.processMu.Unlock()
 	}()
 }
 
-func (w *Watcher) killProcess() {
-	w.processMu.Lock()
-	defer w.processMu.Unlock()
+func (w *Watcher) reloadProcess() {
+	w.stopProcess(true)
+}
 
-	if w.process == nil || w.process.Process == nil {
+func (w *Watcher) killProcess() {
+	w.stopProcess(false)
+}
+
+func (w *Watcher) stopProcess(isReload bool) {
+	w.processMu.Lock()
+	proc := w.process
+	doneCh := w.procDone
+	w.processMu.Unlock()
+
+	if proc == nil || proc.Process == nil || doneCh == nil {
 		return
 	}
 
-	// Try graceful SIGTERM first
-	w.process.Process.Signal(syscall.SIGTERM)
-
-	done := make(chan struct{})
-	go func() {
-		w.process.Wait()
-		close(done)
-	}()
+	// Send SIGHUP on hot-reload so libXESS preserves the active session directory,
+	// or SIGTERM on final shutdown so libXESS purges the session directory.
+	sig := syscall.SIGTERM
+	if isReload {
+		sig = syscall.SIGHUP
+	}
+	if err := proc.Process.Signal(sig); err != nil && isReload {
+		_ = proc.Process.Signal(syscall.SIGTERM)
+	}
 
 	select {
-	case <-done:
+	case <-doneCh:
 		// Graceful exit
 	case <-time.After(w.cfg.Graceful):
 		// Force kill
-		w.process.Process.Kill()
+		_ = proc.Process.Kill()
+		<-doneCh
 	}
-	w.process = nil
+
+	w.processMu.Lock()
+	if w.process == proc {
+		w.process = nil
+		w.procDone = nil
+	}
+	w.processMu.Unlock()
 }
 
 func (w *Watcher) triggerRestart(reason string) {
@@ -203,7 +226,7 @@ func (w *Watcher) processEvents() {
 			if !w.cfg.Silent {
 				ui.PrintRestartDivider(w.restartCount)
 			}
-			w.killProcess()
+			w.reloadProcess()
 			w.spawnProcess()
 		}
 		_ = reason
@@ -225,7 +248,7 @@ func (w *Watcher) processEvents() {
 					if !w.cfg.Silent {
 						ui.PrintRestartDivider(w.restartCount)
 					}
-					w.killProcess()
+					w.reloadProcess()
 					w.spawnProcess()
 				}
 				_ = reason
@@ -556,21 +579,20 @@ func resolveXfpmBin() string {
 
 func (w *Watcher) buildEnv() []string {
 	raw := os.Environ()
-	env := make([]string, 0, len(raw)+2)
+	env := make([]string, 0, len(raw)+3)
 	for _, e := range raw {
-		// Strip outer libXESS supervisor markers so each spawned runner
-		// gets its own fresh, isolated, un-locked libXESS session across reloads
+		// Strip inner per-execution confinement markers so each spawned runner
+		// gets a fresh IPC channel while libXESS manages session persistence across reloads.
 		if strings.HasPrefix(e, "LIBXESS_ACTIVE=") ||
 			strings.HasPrefix(e, "XYPRISS_XESS_AUTH_TOKEN=") ||
 			strings.HasPrefix(e, "XFPM_IPC_SOCK=") ||
-			strings.HasPrefix(e, "XYPRISS_XESS_SOCK=") ||
-			strings.HasPrefix(e, "XYPRISS_USER_TMP=") ||
-			strings.HasPrefix(e, "XYPRISS_SESSION_HASH=") {
+			strings.HasPrefix(e, "XYPRISS_XESS_SOCK=") {
 			continue
 		}
 		env = append(env, e)
 	}
 	env = append(env, "FILEONIX=1")
+	env = append(env, fmt.Sprintf("FILEONIX_PID=%d", os.Getpid()))
 	env = append(env, fmt.Sprintf("FILEONIX_RESTART=%d", w.restartCount))
 	return env
 }

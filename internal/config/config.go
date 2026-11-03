@@ -143,6 +143,33 @@ func Load(args []string) (*Config, error) {
 		}
 	}
 
+	// Automatic XyPriss integration: if this is a XyPriss project, runner must be xfpm
+	cwd, _ := os.Getwd()
+	isXyPriss := detectXyPrissInDir(cwd)
+	if !isXyPriss && configPath != "" {
+		isXyPriss = detectXyPrissInDir(filepath.Dir(configPath))
+	}
+	if !isXyPriss && anchor != "" {
+		isXyPriss = detectXyPrissInDir(anchor)
+	}
+
+	if isXyPriss {
+		needSave := false
+		if cfg.Runner != "xfpm" {
+			cfg.Runner = "xfpm"
+			needSave = true
+		}
+		if cfg.TypescriptRunner != "" {
+			cfg.TypescriptRunner = ""
+			needSave = true
+		}
+		if needSave && configPath != "" && !strings.HasSuffix(configPath, "package.json") {
+			if err := saveConfig(cfg, configPath); err == nil {
+				ui.Success(fmt.Sprintf("Auto-configured runner to 'xfpm' in %s (XyPriss project detected)", filepath.Base(configPath)))
+			}
+		}
+	}
+
 	// 3. Override with CLI args (higher priority)
 	if err := parseArgs(cfg, args); err != nil {
 		return nil, err
@@ -610,6 +637,33 @@ func InitConfig() {
 	ui.Info("Edit it to match your project, then run: fileonix")
 }
 
+func detectXyPrissInDir(dir string) bool {
+	markers := []string{
+		"xypriss.json",
+		"xypriss.config.ts",
+		"xypriss.config.js",
+		"xypriss.config.json",
+		"xypriss.config.jsonc",
+	}
+	for _, m := range markers {
+		if _, err := os.Stat(filepath.Join(dir, m)); err == nil {
+			return true
+		}
+	}
+	pkgData, err := os.ReadFile(filepath.Join(dir, "package.json"))
+	if err == nil {
+		var pkg struct {
+			Name            string            `json:"name"`
+			Dependencies    map[string]string `json:"dependencies"`
+			DevDependencies map[string]string `json:"devDependencies"`
+		}
+		if json.Unmarshal(pkgData, &pkg) == nil {
+			return isXyPrissProject(pkg.Name, pkg.Dependencies, pkg.DevDependencies, dir)
+		}
+	}
+	return false
+}
+
 func isXyPrissProject(name string, deps, devDeps map[string]string, dir string) bool {
 	if name == "xypriss" {
 		return true
@@ -624,7 +678,13 @@ func isXyPrissProject(name string, deps, devDeps map[string]string, dir string) 
 			return true
 		}
 	}
-	markers := []string{"xypriss.json", "xypriss.config.ts", "xypriss.config.js"}
+	markers := []string{
+		"xypriss.json",
+		"xypriss.config.ts",
+		"xypriss.config.js",
+		"xypriss.config.json",
+		"xypriss.config.jsonc",
+	}
 	for _, m := range markers {
 		if _, err := os.Stat(filepath.Join(dir, m)); err == nil {
 			return true

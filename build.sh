@@ -10,6 +10,7 @@
 # *****************************************************************************
 
 set -e
+export GOWORK=off
 
 APP_NAME="fileonix"
 BUILD_DIR="bin"
